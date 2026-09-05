@@ -27,10 +27,11 @@ onMounted(() => {
       const res = await api.getDonation(props.id)
       status.value = res.status
       if (res.status !== 'pending') {
-        clearInterval(timer)
-        // จ่ายสำเร็จ → เสียง + คอนเฟตติเฉลิมฉลองในแท็บนี้ด้วย
+        clearInterval(timer)        // จ่ายสำเร็จ → เสียง + คอนเฟตติเฉลิมฉลองในแท็บนี้ด้วย
+        // หมายเหตุ: โหมด tts ไม่เล่นกระดิ่งซ้ำ — ลำดับ กระดิ่ง→เสียงอ่าน ให้ overlay จัดการ
+        // (polling ตรวจได้ช้า-เร็วไม่แน่นอน กระดิ่งซ้ำจะไปทับเสียงอ่านของ overlay)
         if (res.status === 'paid') {
-          playSound(soundKind)
+          if (soundKind !== 'tts') playSound(soundKind)
           burstConfetti(80)
         }
         setTimeout(() => router.push('/'), 8000)
@@ -38,7 +39,7 @@ onMounted(() => {
     } catch {
       /* network สะดุดชั่วคราว — รอรอบถัดไป */
     }
-  }, 2000)
+  }, 1000)
 })
 
 onUnmounted(() => clearInterval(timer))
