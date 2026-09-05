@@ -112,6 +112,13 @@ export interface TopDonator {
   count: number
 }
 
+export interface RecentDonation {
+  donor_name: string
+  amount: number
+  message: string
+  paid_at: number
+}
+
 export interface DonationEvent {
   user_id: string
   id: string
@@ -128,6 +135,7 @@ export const api = {
   testAlert: () => request<{ ok: boolean }>('/api/test-alert', { method: 'POST' }),
   publicProfile: (username: string) => request<PublicProfile>(`/api/u/${username}`),
   topDonators: (username: string) => request<TopDonator[]>(`/api/u/${username}/top`),
+  recentDonations: (username: string) => request<RecentDonation[]>(`/api/u/${username}/recent`),
   getSettings: () => request<Settings>('/api/me/settings'),
   updateSettings: (body: Partial<Settings>) =>
     request<Settings>('/api/me/settings', { method: 'PUT', body: JSON.stringify(body) }),

@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { api, type PublicProfile, type TopDonator } from '../api/auth'
+import { api, type PublicProfile, type TopDonator, type RecentDonation } from '../api/auth'
 import type { SoundKind } from '../api/auth'
 
 const route = useRoute()
 const router = useRouter()
 const profile = ref<PublicProfile | null>(null)
 const topDonators = ref<TopDonator[]>([])
+const recent = ref<RecentDonation[]>([])
 const name = ref('')
 const amount = ref<number | null>(null)
 const message = ref('')
@@ -16,7 +17,9 @@ const anonymous = ref(false)
 const submitting = ref(false)
 const error = ref('')
 
-const targetUsername = (route.query.u as string) || undefined
+// ?u=username → โดเนตให้สตรีมเมอร์คนนั้น; ลิงก์เป็น /?u=xxx#/ (query อยู่ก่อน hash) ต้องอ่านจาก location.search
+const targetUsername =
+  new URLSearchParams(location.search).get('u') || (route.query.u as string) || undefined
 
 // theme toggle (dark = Minimal & Friendly, light = Clean Light Mode)
 const theme = ref(localStorage.getItem('donateme_theme') ?? 'dark')
@@ -31,11 +34,24 @@ onMounted(() => {
     api.publicProfile(targetUsername)
       .then(async (p) => {
         profile.value = p
-        if (p.show_leaderboard) topDonators.value = (await api.topDonators(targetUsername)).slice(0, 5)
+        if (p.show_leaderboard) {
+          ;[topDonators.value, recent.value] = await Promise.all([
+            api.topDonators(targetUsername).then((r) => r.slice(0, 5)),
+            api.recentDonations(targetUsername),
+          ])
+        }
       })
       .catch(() => (error.value = 'ไม่พบสตรีมเมอร์นี้ — ตรวจลิงก์อีกครั้ง'))
   }
 })
+
+function timeAgo(ms: number): string {
+  const diff = Math.floor((Date.now() - ms) / 1000)
+  if (diff < 60) return `${diff} วินาทีที่แล้ว`
+  if (diff < 3600) return `${Math.floor(diff / 60)} นาทีที่แล้ว`
+  if (diff < 86400) return `${Math.floor(diff / 3600)} ชั่วโมงที่แล้ว`
+  return `${Math.floor(diff / 86400)} วันที่แล้ว`
+}
 
 const presets = [
   { v: 20, label: 'กาแฟวาร์ป', emoji: '☕' },
@@ -251,26 +267,18 @@ async function submit() {
             <h2>⚡ กำลังส่งกำลังใจ สด ๆ</h2>
             <span class="badge badge-green">● ระบบทำงาน</span>
           </div>
-          <div class="feed">
-            <div class="feed-item">
-              <span class="feed-icon">❤️</span>
-              <div><b>Gunz_lnwZa</b> <em class="feed-amt">฿300.00</em> <span class="muted small">· 1 นาทีที่แล้ว</span>
-                <p>"พี่แนนสตรีมมิ่งเพราะสุดในจักรวาลเลยครับ ราศีนี้ครับทีมเดียวกัน"</p>
-              </div>
-            </div>
-            <div class="feed-item">
-              <span class="feed-icon">⭐</span>
-              <div><b>คุณปริสนธ์สปอนเซอร์</b> <em class="feed-amt">฿100.00</em> <span class="muted small">· 4 นาทีที่แล้ว</span>
-                <p>"เว็บทำได้ดีมากครับ โหนดแมนย้อนหลัง ขอแสดงเป็นกำลังใจและกำลัง 💗"</p>
-              </div>
-            </div>
-            <div class="feed-item">
-              <span class="feed-icon">⚡</span>
-              <div><b>Pluem_Ch</b> <em class="feed-amt">฿50.00</em> <span class="muted small">· 12 นาทีที่แล้ว</span>
-                <p>"กราฟวิ่งไหว โหนดกานบนอกอุ่นมาก 5555"</p>
+          <div v-if="recent.length" class="feed">
+            <div v-for="(r, i) in recent" :key="i" class="feed-item">
+              <span class="feed-icon">{{ ['❤️', '⭐', '⚡', '💜', '🎉'][i] ?? '💗' }}</span>
+              <div>
+                <b>{{ r.donor_name }}</b>
+                <em class="feed-amt">฿{{ r.amount.toLocaleString() }}</em>
+                <span class="muted small">· {{ timeAgo(r.paid_at) }}</span>
+                <p v-if="r.message">"{{ r.message }}"</p>
               </div>
             </div>
           </div>
+          <p v-else class="muted empty">ยังไม่มีรายการ — เป็นคนแรกที่ส่งกำลังใจสิ!</p>
           <a class="feed-more" href="/#/dashboard">ดูรายการทั้งหมดสนุกต่ออีก →</a>
         </div>
       </section>

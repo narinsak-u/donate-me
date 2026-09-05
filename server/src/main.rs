@@ -439,6 +439,7 @@ async fn main() {
         .route("/api/me", get(auth::me))
         .route("/api/u/{username}", get(users::public_profile))
         .route("/api/u/{username}/top", get(users::top_donators))
+        .route("/api/u/{username}/recent", get(users::recent_donations))
         .route("/api/me/settings", get(users::get_settings).put(users::update_settings))
         .route("/api/me/stats", get(dashboard::stats))
         .route("/api/me/donations", get(dashboard::history))

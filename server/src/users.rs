@@ -85,6 +85,43 @@ pub async fn top_donators(
         .collect()))
 }
 
+// ---------- Recent live feed ----------
+
+#[derive(Serialize)]
+pub struct RecentDonation {
+    pub donor_name: String,
+    pub amount: i64,
+    pub message: String,
+    pub paid_at: i64,
+}
+
+/// GET /api/u/:username/recent — โดเนตล่าสุด 5 รายการ (ข้ามข้อความที่ซ่อน) สำหรับ live feed
+pub async fn recent_donations(
+    State(state): State<AppState>,
+    Path(username): Path<String>,
+) -> Result<Json<Vec<RecentDonation>>, (StatusCode, String)> {
+    let rows = sqlx::query(
+        "SELECT d.donor_name, d.amount, d.message, COALESCE(d.paid_at, d.created_at) t
+         FROM donations d JOIN users u ON u.id = d.user_id
+         WHERE u.username = ? AND d.status = 'paid' AND d.hidden = 0
+         ORDER BY t DESC LIMIT 5",
+    )
+    .bind(username.to_lowercase())
+    .fetch_all(&state.db)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}")))?;
+
+    Ok(Json(rows
+        .into_iter()
+        .map(|r| RecentDonation {
+            donor_name: r.get("donor_name"),
+            amount: r.get("amount"),
+            message: r.get("message"),
+            paid_at: r.get("t"),
+        })
+        .collect()))
+}
+
 // ---------- Settings (ต้อง login เจ้าของเท่านั้น) ----------
 
 #[derive(Serialize)]
