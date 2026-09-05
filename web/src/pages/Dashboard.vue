@@ -2,16 +2,25 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api, getToken, getUser, type PublicUser, type Settings } from '../api/auth'
-import { dashApi, type DonationItem, type Stats } from '../api/dashboard'
+import { dashApi, type DonationItem, type Stats, type Wallet, type Withdrawal } from '../api/dashboard'
 import DonationChart from '../components/DonationChart.vue'
 
 const router = useRouter()
 const user = ref<PublicUser | null>(getUser())
-const tab = ref<'overview' | 'donations' | 'settings'>('overview')
+const tab = ref<'overview' | 'donations' | 'settings' | 'wallet'>('overview')
 const donateLink = ref('')
 const copied = ref(false)
 const overlayUrl = ref('')
 const obsCopied = ref(false)
+
+// wallet
+const wallet = ref<Wallet | null>(null)
+const withdrawals = ref<Withdrawal[]>([])
+const wAmount = ref<number | null>(null)
+const wBank = ref('')
+const wAccount = ref('')
+const wBusy = ref(false)
+const wError = ref('')
 
 const stats = ref<Stats | null>(null)
 const items = ref<DonationItem[]>([])
@@ -35,13 +44,49 @@ onMounted(async () => {
   const [s, st] = await Promise.all([dashApi.stats(), api.getSettings()])
   stats.value = s
   settings.value = st
-  await loadHistory()
-})
+  await Promise.all([loadHistory(), loadWallet()])})
 
 async function loadHistory() {
-  const res = await dashApi.history({ query: search.value, page: page.value })
+  const toMillis = (d: string, end = false) => {
+    if (!d) return undefined
+    const t = new Date(d).getTime()
+    return end ? t + 86_399_999 : t
+  }
+  const res = await dashApi.history({
+    query: search.value,
+    page: page.value,
+    from: toMillis(dateFrom.value),
+    to: toMillis(dateTo.value, true),
+  })
   items.value = res.items
   totalPages.value = res.total_pages
+}
+
+async function loadWallet() {
+  const [w, ws] = await Promise.all([dashApi.wallet(), dashApi.withdrawals()])
+  wallet.value = w
+  withdrawals.value = ws
+}
+
+async function submitWithdraw() {
+  wError.value = ''
+  if (!wallet.value) return
+  wBusy.value = true
+  try {
+    await dashApi.requestWithdrawal({
+      amount: wAmount.value ?? 0,
+      bank_name: wBank.value,
+      bank_account: wAccount.value,
+    })
+    wAmount.value = null
+    wBank.value = ''
+    wAccount.value = ''
+    await loadWallet()
+  } catch (e) {
+    wError.value = e instanceof Error ? e.message : 'ส่งคำขอไม่สำเร็จ'
+  } finally {
+    wBusy.value = false
+  }
 }
 
 function copyLink() {
@@ -97,6 +142,16 @@ function fmtDate(ms: number | null): string {
   return new Date(ms).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })
 }
 
+function soundLabel(s: string): string {
+  const map: Record<string, string> = {
+    chime: '🔔 กระดิ่ง',
+    coin: '🪙 เหรียญ',
+    fanfare: '🎺 แตรวง',
+    tts: '🗣️ TTS',
+  }
+  return map[s] ?? s
+}
+
 const total30 = computed(() => stats.value?.series_30d.reduce((s, d) => s + d.total, 0) ?? 0)
 const avgPerBill = computed(() =>
   stats.value && stats.value.count_all > 0 ? Math.round(stats.value.total_all / stats.value.count_all) : 0,
@@ -111,6 +166,7 @@ const navItems = [
   { key: 'overview', icon: '📊', label: 'ภาพรวม (Dashboard)' },
   { key: 'donations', icon: '🧾', label: 'ประวัติโดเนต' },
   { key: 'settings', icon: '🔔', label: 'ตั้งค่าแจ้งเตือน (Alerts)' },
+  { key: 'wallet', icon: '💰', label: 'กระเป๋าเงิน & ถอน' },
 ] as const
 
 const themeOptions = [
@@ -282,21 +338,26 @@ const themeOptions = [
             </div>
             <div class="toolbar">
               <input v-model="search" class="input" placeholder="ค้นหาชื่อ/ข้อความ..." @keyup.enter="page = 1; loadHistory()" />
+              <input v-model="dateFrom" class="input date" type="date" title="จากวันที่" @change="page = 1; loadHistory()" />
+              <span class="muted">ถึง</span>
+              <input v-model="dateTo" class="input date" type="date" title="ถึงวันที่" @change="page = 1; loadHistory()" />
               <button class="btn-ghost" @click="page = 1; loadHistory()">ค้นหา</button>
+              <button v-if="dateFrom || dateTo || search" class="mini" @click="search = ''; dateFrom = ''; dateTo = ''; page = 1; loadHistory()">✕ ล้างตัวกรอง</button>
             </div>
             <table>
               <thead>
-                <tr><th>เวลา</th><th>ผู้ส่งกำลังใจ</th><th>ยอดเงิน</th><th>ข้อความ</th><th>จัดการ</th></tr>
+                <tr><th>เวลา</th><th>ผู้ส่งกำลังใจ</th><th>ยอดเงิน</th><th>ข้อความ</th><th>เสียง</th><th>จัดการ</th></tr>
               </thead>
               <tbody>
                 <tr v-for="it in items" :key="it.id">
                   <td class="muted">{{ fmtDate(it.paid_at) }}</td>
-                  <td><b>{{ it.donor_name }}</b><br /><span class="muted small">{{ it.sound }}</span></td>
+                  <td><b>{{ it.donor_name }}</b></td>
                   <td class="amount">฿{{ it.amount.toLocaleString() }}</td>
                   <td :class="{ hidden: it.hidden }">{{ it.hidden ? '(ซ่อนแล้ว)' : it.message || '-' }}</td>
+                  <td><span class="sound-pill">{{ soundLabel(it.sound) }}</span></td>
                   <td><button class="mini" @click="toggleHidden(it)">{{ it.hidden ? 'แสดง' : 'ซ่อน' }}</button></td>
                 </tr>
-                <tr v-if="!items.length"><td colspan="5" class="muted center">ยังไม่มีประวัติโดเนต</td></tr>
+                <tr v-if="!items.length"><td colspan="6" class="muted center">ยังไม่มีประวัติโดเนตในช่วงนี้</td></tr>
               </tbody>
             </table>
             <div class="pager" v-if="totalPages > 1">
@@ -304,6 +365,83 @@ const themeOptions = [
               <span class="muted">{{ page }} / {{ totalPages }}</span>
               <button class="mini" :disabled="page >= totalPages" @click="page++; loadHistory()">ถัดไป →</button>
             </div>
+          </section>
+        </template>
+
+        <!-- ===== Wallet ===== -->
+        <template v-if="tab === 'wallet'">
+          <div class="metrics">
+            <div class="metric">
+              <div class="metric-head"><span>ยอดถอนได้ (BALANCE)</span><i class="m-icon green">💎</i></div>
+              <b class="metric-num">฿{{ (wallet?.balance ?? 0).toLocaleString() }}</b>
+              <span class="metric-foot">พร้อมถอนทันที</span>
+            </div>
+            <div class="metric">
+              <div class="metric-head"><span>รอดำเนินการ</span><i class="m-icon gold">⏳</i></div>
+              <b class="metric-num">฿{{ (wallet?.pending_withdraw ?? 0).toLocaleString() }}</b>
+              <span class="metric-foot">คำขอถอนที่รอโอน</span>
+            </div>
+            <div class="metric">
+              <div class="metric-head"><span>ถอนสำเร็จแล้ว</span><i class="m-icon pink">🏦</i></div>
+              <b class="metric-num">฿{{ (wallet?.total_withdrawn ?? 0).toLocaleString() }}</b>
+              <span class="metric-foot">ตลอดการใช้งาน</span>
+            </div>
+            <div class="metric">
+              <div class="metric-head"><span>รายได้รวม</span><i class="m-icon blue">📈</i></div>
+              <b class="metric-num">฿{{ (wallet?.total_earned ?? 0).toLocaleString() }}</b>
+              <span class="metric-foot">จากโดเนตทั้งหมด</span>
+            </div>
+          </div>
+
+          <section class="card">
+            <div class="card-head">
+              <h2>🏦 ขอถอนเงิน</h2>
+              <span class="badge badge-gold">MOCK — ยังไม่มีการโอนจริง</span>
+            </div>
+            <p class="muted" style="margin-bottom: 6px">
+              ระบบจำลองการถอน (สถานะ "รอดำเนินการ") — การโอนเข้าบัญชีจริงจะเปิดใช้เมื่อต่อ Omise Payout ในอนาคต
+            </p>
+            <div class="withdraw-form">
+              <div>
+                <label>จำนวนเงิน (ขั้นต่ำ ฿100)</label>
+                <input v-model.number="wAmount" class="input" type="number" min="100" :max="wallet?.balance" placeholder="เช่น 500" />
+              </div>
+              <div>
+                <label>ธนาคาร</label>
+                <input v-model="wBank" class="input" placeholder="เช่น กสิกรไทย (KBank)" maxlength="60" />
+              </div>
+              <div>
+                <label>เลขบัญชี</label>
+                <input v-model="wAccount" class="input" placeholder="เช่น 1234567890" maxlength="30" />
+              </div>
+              <button class="btn-primary" :disabled="wBusy || !wAmount || (wallet?.balance ?? 0) < 100" @click="submitWithdraw">
+                {{ wBusy ? 'กำลังส่ง...' : '💸 ส่งคำขอถอน' }}
+              </button>
+            </div>
+            <p v-if="wError" class="error">{{ wError }}</p>
+          </section>
+
+          <section class="card">
+            <div class="card-head">
+              <h2>📋 ประวัติการถอน</h2>
+            </div>
+            <table v-if="withdrawals.length">
+              <thead>
+                <tr><th>เวลา</th><th>ยอดเงิน</th><th>ธนาคาร</th><th>เลขบัญชี</th><th>สถานะ</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="w in withdrawals" :key="w.id">
+                  <td class="muted">{{ fmtDate(w.created_at) }}</td>
+                  <td class="amount">฿{{ w.amount.toLocaleString() }}</td>
+                  <td>{{ w.bank_name }}</td>
+                  <td class="muted">{{ w.bank_account }}</td>
+                  <td>
+                    <span class="status-pill" :class="w.status">{{ w.status === 'pending' ? '⏳ รอดำเนินการ' : w.status === 'completed' ? '✅ สำเร็จ' : '❌ ถูกปฏิเสธ' }}</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <p v-else class="muted center" style="padding: 20px">ยังไม่มีประวัติการถอน</p>
           </section>
         </template>
 
@@ -652,10 +790,52 @@ code { background: var(--bg-card-2); padding: 1px 6px; border-radius: 5px; font-
 }
 
 @media (max-width: 1000px) {
-  .sidebar { display: none; }
   .metrics { grid-template-columns: 1fr 1fr; }
   .grid-2 { grid-template-columns: 1fr; }
   .goal-card { flex-direction: column; }
   .goal-right { border: none; padding: 0; }
+  .palettes { grid-template-columns: 1fr 1fr; }
+  .steps-3 { grid-template-columns: 1fr; }
 }
+
+/* mobile: sidebar → top nav */
+@media (max-width: 780px) {
+  .shell { flex-direction: column; }
+  .sidebar {
+    position: static; height: auto; width: 100%;
+    flex-direction: row; flex-wrap: wrap; align-items: center;
+    border-right: none; border-bottom: 1px solid var(--border);
+  }
+  .side-logo { width: 100%; }
+  .caster-box { flex: 1; }
+  .side-nav { flex-direction: row; flex-wrap: wrap; width: 100%; }
+  .side-nav button { padding: 9px 12px; font-size: 12.5px; }
+  .obs-box { display: none; }
+  .side-footer { margin-left: auto; padding: 0; }
+  .topbar { flex-wrap: wrap; padding: 10px 16px; }
+  .content { padding: 16px 14px 40px; }
+  .welcome { flex-direction: column; align-items: flex-start; }
+  .welcome-link { width: 100%; }
+  .welcome-link span { font-size: 11.5px; word-break: break-all; }
+  .toolbar { flex-wrap: wrap; }
+  .toolbar .date { width: auto; }
+  .obs-url-row { flex-direction: column; }
+  .withdraw-form { grid-template-columns: 1fr !important; }
+  table { font-size: 12px; }
+  td, th { padding: 7px 4px; }
+}
+
+/* withdraw form */
+.withdraw-form { display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 12px; align-items: end; margin-top: 8px; }
+.withdraw-form label { margin-top: 10px; }
+.error { color: var(--primary); font-size: 13px; margin-top: 12px; }
+.sound-pill {
+  font-size: 11.5px; padding: 3px 10px; border-radius: 999px;
+  background: var(--bg-card-2); border: 1px solid var(--border); color: var(--text-dim);
+}
+.status-pill { font-size: 12px; font-weight: 700; }
+.status-pill.pending { color: var(--gold); }
+.status-pill.completed { color: var(--emerald); }
+.status-pill.rejected { color: var(--primary); }
+.toolbar .date { width: auto; padding: 10px 12px; }
 </style>

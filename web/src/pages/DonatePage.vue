@@ -511,4 +511,22 @@ textarea { resize: vertical; }
   .grid-2 { grid-template-columns: 1fr; }
   .hero { flex-direction: column; }
 }
+@media (max-width: 640px) {
+  .topbar { flex-wrap: wrap; gap: 10px; padding: 10px 14px; }
+  .logo { flex: 1; }
+  .topnav { order: 3; width: 100%; overflow-x: auto; }
+  .topnav a { white-space: nowrap; padding: 7px 12px; font-size: 12.5px; }
+  .join-btn { padding: 7px 14px; font-size: 12.5px; }
+  .wrap { padding: 16px 14px 32px; }
+  .card { padding: 20px 16px; }
+  .hero { padding: 18px; }
+  .avatar { margin-top: -50px; width: 76px; height: 76px; font-size: 32px; }
+  .hero-avatar { width: 76px; height: 76px; font-size: 32px; }
+  h1 { font-size: 22px; }
+  .presets { grid-template-columns: 1fr 1fr; }
+  .sound-chips { grid-template-columns: 1fr 1fr; }
+  .name-row { flex-direction: column; align-items: stretch; }
+  .anon { margin-bottom: 0; justify-content: flex-end; }
+  .board li { flex-wrap: wrap; }
+}
 </style>

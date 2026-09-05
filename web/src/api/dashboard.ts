@@ -33,12 +33,31 @@ export interface HistoryResponse {
   total_pages: number
 }
 
+export interface Wallet {
+  total_earned: number
+  pending_withdraw: number
+  total_withdrawn: number
+  balance: number
+}
+
+export interface Withdrawal {
+  id: string
+  amount: number
+  bank_name: string
+  bank_account: string
+  status: 'pending' | 'completed' | 'rejected'
+  created_at: number
+  paid_at: number | null
+}
+
 export const dashApi = {
   stats: () => request<Stats>('/api/me/stats'),
-  history: (q?: { query?: string; page?: number }) => {
+  history: (q?: { query?: string; page?: number; from?: number; to?: number }) => {
     const params = new URLSearchParams()
     if (q?.query) params.set('q', q.query)
     if (q?.page) params.set('page', String(q.page))
+    if (q?.from) params.set('from', String(q.from))
+    if (q?.to) params.set('to', String(q.to))
     return request<HistoryResponse>(`/api/me/donations?${params}`)
   },
   setHidden: (id: string, hidden: boolean) =>
@@ -57,4 +76,8 @@ export const dashApi = {
     if (!res.ok) throw new Error(await res.text())
     return res.json() as Promise<{ url: string }>
   },
+  wallet: () => request<Wallet>('/api/me/wallet'),
+  withdrawals: () => request<Withdrawal[]>('/api/me/withdrawals'),
+  requestWithdrawal: (body: { amount: number; bank_name: string; bank_account: string }) =>
+    request<Withdrawal>('/api/me/withdrawals', { method: 'POST', body: JSON.stringify(body) }),
 }

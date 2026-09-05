@@ -6,7 +6,7 @@ use axum::{
     Json,
 };
 use serde::{Deserialize, Serialize};
-use sqlx::Row;
+use sqlx::{Row, SqlitePool};
 
 use crate::auth::AuthUser;
 use crate::AppState;
@@ -112,6 +112,11 @@ pub struct HistoryQuery {
     pub page: Option<i64>,
     #[serde(default)]
     pub per_page: Option<i64>,
+    /// กรองช่วงวันที่ (epoch millis)
+    #[serde(default)]
+    pub from: Option<i64>,
+    #[serde(default)]
+    pub to: Option<i64>,
 }
 
 #[derive(Serialize)]
@@ -142,10 +147,17 @@ pub async fn history(
     let per_page = q.per_page.unwrap_or(20).clamp(1, 100);
 
     let pattern = format!("%{}%", q.q.unwrap_or_default().replace('%', ""));
+    let from = q.from.unwrap_or(0);
+    let to = q.to.unwrap_or(i64::MAX);
+
     let total: i64 = sqlx::query(
-        "SELECT COUNT(*) c FROM donations WHERE user_id=? AND status='paid' AND (donor_name LIKE ? OR message LIKE ?)",
+        "SELECT COUNT(*) c FROM donations
+         WHERE user_id=? AND status='paid' AND created_at >= ? AND created_at <= ?
+         AND (donor_name LIKE ? OR message LIKE ?)",
     )
     .bind(&user.user_id)
+    .bind(from)
+    .bind(to)
     .bind(&pattern)
     .bind(&pattern)
     .fetch_one(&state.db)
@@ -155,10 +167,13 @@ pub async fn history(
 
     let rows = sqlx::query(
         "SELECT id, donor_name, amount, message, sound, hidden, created_at, paid_at FROM donations
-         WHERE user_id=? AND status='paid' AND (donor_name LIKE ? OR message LIKE ?)
+         WHERE user_id=? AND status='paid' AND created_at >= ? AND created_at <= ?
+         AND (donor_name LIKE ? OR message LIKE ?)
          ORDER BY COALESCE(paid_at, created_at) DESC LIMIT ? OFFSET ?",
     )
     .bind(&user.user_id)
+    .bind(from)
+    .bind(to)
     .bind(&pattern)
     .bind(&pattern)
     .bind(per_page)
@@ -271,6 +286,166 @@ fn fmt_iso(epoch_millis: i64) -> String {
         month += 1;
     }
     format!("{year:04}-{month:02}-{days:02}T{h:02}:{m:02}:{s:02}Z")
+}
+
+// ---------- Wallet & Withdraw (mock — โอนจริงรอ Phase Omise Payout) ----------
+
+#[derive(Serialize)]
+pub struct Wallet {
+    pub total_earned: i64,
+    pub pending_withdraw: i64,
+    pub total_withdrawn: i64,
+    pub balance: i64,
+}
+
+#[derive(Serialize)]
+pub struct Withdrawal {
+    pub id: String,
+    pub amount: i64,
+    pub bank_name: String,
+    pub bank_account: String,
+    pub status: String,
+    pub created_at: i64,
+    pub paid_at: Option<i64>,
+}
+
+/// GET /api/me/wallet
+pub async fn wallet(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> Result<Json<Wallet>, (StatusCode, String)> {
+    let total_earned = total_earned(&state.db, &user.user_id).await?;
+    let (pending, withdrawn) = pending_and_withdrawn(&state.db, &user.user_id).await?;
+
+    Ok(Json(Wallet {
+        total_earned,
+        pending_withdraw: pending,
+        total_withdrawn: withdrawn,
+        balance: total_earned - pending - withdrawn,
+    }))
+}
+
+async fn total_earned(db: &SqlitePool, user_id: &str) -> Result<i64, (StatusCode, String)> {
+    let row = sqlx::query(
+        "SELECT COALESCE(SUM(amount),0) t FROM donations WHERE user_id=? AND status='paid'",
+    )
+    .bind(user_id)
+    .fetch_one(db)
+    .await
+    .map_err(db_err)?;
+    Ok(row.get::<i64, _>("t"))
+}
+
+async fn pending_and_withdrawn(
+    db: &SqlitePool,
+    user_id: &str,
+) -> Result<(i64, i64), (StatusCode, String)> {
+    let row = sqlx::query(
+        "SELECT
+           COALESCE(SUM(CASE WHEN status='pending' THEN amount END),0) p,
+           COALESCE(SUM(CASE WHEN status='completed' THEN amount END),0) w
+         FROM withdrawals WHERE user_id=? AND status IN ('pending','completed')",
+    )
+    .bind(user_id)
+    .fetch_one(db)
+    .await
+    .map_err(db_err)?;
+    Ok((row.get("p"), row.get("w")))
+}
+
+async fn compute_balance(db: &SqlitePool, user_id: &str) -> Result<i64, (StatusCode, String)> {
+    let total_earned = total_earned(db, user_id).await?;
+    let (pending, withdrawn) = pending_and_withdrawn(db, user_id).await?;
+    Ok(total_earned - pending - withdrawn)
+}
+
+/// GET /api/me/withdrawals
+pub async fn list_withdrawals(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> Result<Json<Vec<Withdrawal>>, (StatusCode, String)> {
+    let rows = sqlx::query(
+        "SELECT id, amount, bank_name, bank_account, status, created_at, paid_at
+         FROM withdrawals WHERE user_id=? ORDER BY created_at DESC LIMIT 50",
+    )
+    .bind(&user.user_id)
+    .fetch_all(&state.db)
+    .await
+    .map_err(db_err)?;
+
+    Ok(Json(rows
+        .into_iter()
+        .map(|r| Withdrawal {
+            id: r.get("id"),
+            amount: r.get("amount"),
+            bank_name: r.get("bank_name"),
+            bank_account: r.get("bank_account"),
+            status: r.get("status"),
+            created_at: r.get("created_at"),
+            paid_at: r.get("paid_at"),
+        })
+        .collect()))
+}
+
+#[derive(Deserialize)]
+pub struct WithdrawInput {
+    pub amount: i64,
+    pub bank_name: String,
+    pub bank_account: String,
+}
+
+/// POST /api/me/withdrawals — สร้างคำขอถอน (mock: สถานะ pending)
+pub async fn create_withdrawal(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(body): Json<WithdrawInput>,
+) -> Result<(StatusCode, Json<Withdrawal>), (StatusCode, String)> {
+    let bank_name = crate::sanitize::clean_text(&body.bank_name);
+    let bank_account = body.bank_account.trim();
+    if bank_name.is_empty() || bank_name.chars().count() > 60 {
+        return Err((StatusCode::BAD_REQUEST, "กรุณาระบุชื่อธนาคาร".into()));
+    }
+    if bank_account.is_empty() || bank_account.len() > 30 || !bank_account.chars().all(|c| c.is_ascii_digit() || c == '-') {
+        return Err((StatusCode::BAD_REQUEST, "เลขบัญชีต้องเป็นตัวเลข 10-30 หลัก".into()));
+    }
+    if !(100..=1_000_000).contains(&body.amount) {
+        return Err((StatusCode::BAD_REQUEST, "ถอนขั้นต่ำ ฿100 สูงสุด ฿1,000,000".into()));
+    }
+
+    // เช็คยอดคงเหลือ (earned − pending − completed)
+    let balance = compute_balance(&state.db, &user.user_id).await?;
+    if body.amount > balance {
+        return Err((StatusCode::BAD_REQUEST, format!("ยอดคงเหลือไม่พอ (ถอนได้สูงสุด ฿{balance})")));
+    }
+
+    let id = crate::random_id();
+    let now = crate::now_millis();
+    sqlx::query(
+        "INSERT INTO withdrawals (id, user_id, amount, bank_name, bank_account, status, created_at)
+         VALUES (?, ?, ?, ?, ?, 'pending', ?)",
+    )
+    .bind(&id)
+    .bind(&user.user_id)
+    .bind(body.amount)
+    .bind(&bank_name)
+    .bind(bank_account)
+    .bind(now)
+    .execute(&state.db)
+    .await
+    .map_err(db_err)?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(Withdrawal {
+            id,
+            amount: body.amount,
+            bank_name,
+            bank_account: bank_account.to_string(),
+            status: "pending".into(),
+            created_at: now,
+            paid_at: None,
+        }),
+    ))
 }
 
 // ---------- Alert sound upload ----------

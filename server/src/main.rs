@@ -445,6 +445,8 @@ async fn main() {
         .route("/api/me/donations.csv", get(dashboard::export_csv))
         .route("/api/me/donations/{id}", axum::routing::patch(dashboard::patch_donation))
         .route("/api/me/alert-sound", post(dashboard::upload_sound))
+        .route("/api/me/wallet", get(dashboard::wallet))
+        .route("/api/me/withdrawals", get(dashboard::list_withdrawals).post(dashboard::create_withdrawal))
         .nest_service("/uploads", ServeDir::new("uploads"))
         .route("/events", get(events))
         .merge(if is_mock { mock_pay::router() } else { Router::new() })
