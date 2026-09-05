@@ -78,6 +78,44 @@ impl FromRequestParts<AppState> for AuthUser {
     }
 }
 
+// ---------- MaybeAuthUser: เหมือน AuthUser แต่ไม่ reject ถ้าไม่มี token ----------
+
+pub struct MaybeAuthUser {
+    pub user_id: Option<String>,
+}
+
+impl FromRequestParts<AppState> for MaybeAuthUser {
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Self::Rejection> {
+        let token = parts
+            .headers
+            .get(axum::http::header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("Bearer "))
+            .map(str::to_owned)
+            .or_else(|| {
+                let q = parts.uri.query()?;
+                q.split('&').find_map(|kv| {
+                    let (k, v) = kv.split_once('=')?;
+                    (k == "token").then(|| urldecode(v))
+                })
+            });
+
+        let user_id = token.and_then(|t| {
+            decode::<Claims>(
+                &t,
+                &DecodingKey::from_secret(jwt_secret(state).as_bytes()),
+                &Validation::default(),
+            )
+            .ok()
+            .map(|c| c.claims.sub)
+        });
+
+        Ok(MaybeAuthUser { user_id })
+    }
+}
+
 fn urldecode(s: &str) -> String {
     // percent-decode แบบเบา ๆ เพียงพอกับ JWT (A-Za-z0-9 กับ -_.~ ไม่ต้อง encode)
     let bytes = s.as_bytes();

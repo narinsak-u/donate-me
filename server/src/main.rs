@@ -303,10 +303,10 @@ fn row_into_donation(row: &sqlx::sqlite::SqliteRow) -> DonationRow {
 
 async fn events(
     State(state): State<AppState>,
-    user: auth::AuthUser, // token ผูกกับสตรีมเมอร์ — ฟังเฉพาะโดเนตของตัวเอง
+    maybe: auth::MaybeAuthUser, // มี token = ฟังเฉพาะของ user นั้น; ไม่มี = ฟังของ streamer เริ่มต้น
 ) -> Sse<impl tokio_stream::Stream<Item = Result<Event, tokio_stream::wrappers::errors::BroadcastStreamRecvError>>>
 {
-    let my_id = user.user_id.clone();
+    let my_id = maybe.user_id.unwrap_or_else(|| state.user_id.clone());
     let rx = state.tx.subscribe();
     let stream = tokio_stream::wrappers::BroadcastStream::new(rx)
         .filter_map(move |msg| {
