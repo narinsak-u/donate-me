@@ -244,7 +244,9 @@ function showAlert(d: DonationEvent) {
   confetti(tier.confettiCount)
 
   if (d.sound === 'tts' && settings.tts_enabled) {
-    speak(d)
+    // กระดิ่งนำก่อน แล้วค่อยตามด้วยเสียงอ่านข้อความ (หลังเสียงกระดิ่งจบ ~1.2 วิ)
+    setTimeout(() => (sounds.chime)(), 60)
+    setTimeout(() => speak(d), 1400)
   } else if (settings.alert_sound_url) {
     // เสียงอัปโหลดของสตรีมเมอร์ — เล่นทับเสียงสังเคราะห์
     const audio = new Audio(settings.alert_sound_url)
