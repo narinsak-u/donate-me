@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { authApi } from '../api/auth'
 
@@ -11,6 +11,10 @@ const username = ref('')
 const displayName = ref('')
 const error = ref('')
 const busy = ref(false)
+
+onMounted(() => {
+  document.documentElement.setAttribute('data-theme', localStorage.getItem('donateme_theme') ?? 'dark')
+})
 
 async function submit() {
   error.value = ''
@@ -37,12 +41,10 @@ async function submit() {
 
 <template>
   <div class="page">
-    <div class="aurora" />
-    <div class="stars" />
     <div class="card">
       <div class="avatar">💜</div>
       <h1>{{ mode === 'login' ? 'เข้าสู่ระบบ' : 'สมัครสมาชิก' }}</h1>
-      <p class="subtitle">ระบบโดเนตสำหรับสตรีมเมอร์</p>
+      <p class="subtitle">Creator Studio — ระบบโดเนตสำหรับสตรีมเมอร์</p>
 
       <template v-if="mode === 'register'">
         <label>username (ใช้เป็นลิงก์รับโดเนต)</label>
@@ -80,33 +82,29 @@ async function submit() {
   align-items: center;
   justify-content: center;
   padding: 20px;
-  position: relative;
-  background: linear-gradient(160deg, var(--bg-0) 0%, var(--bg-1) 45%, #0f3460 100%);
+  background: var(--bg);
 }
 .card {
-  position: relative;
-  z-index: 1;
   width: 100%;
   max-width: 420px;
-  background: var(--glass);
-  backdrop-filter: blur(20px);
+  background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   padding: 38px 34px;
   box-shadow: var(--shadow-card);
 }
 .avatar {
   width: 72px;
   height: 72px;
-  border-radius: 24px;
-  background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+  border-radius: 22px;
+  background: linear-gradient(135deg, #fb7185, var(--primary));
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 32px;
   margin: -62px auto 16px;
-  border: 4px solid rgba(255, 255, 255, 0.25);
-  box-shadow: var(--glow-pink);
+  border: 4px solid var(--bg);
+  box-shadow: 0 8px 24px rgba(244, 63, 94, 0.35);
 }
 h1 {
   text-align: center;
@@ -130,7 +128,7 @@ input {
   padding: 13px 15px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
-  background: rgba(0, 0, 0, 0.3);
+  background: var(--bg-input);
   color: var(--text);
   font-size: 15px;
   font-family: var(--font-body);
@@ -138,11 +136,11 @@ input {
   transition: border 0.2s, box-shadow 0.2s;
 }
 input:focus {
-  border-color: var(--accent-1);
-  box-shadow: 0 0 0 3px rgba(255, 110, 199, 0.18);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
 }
 .error {
-  color: var(--danger);
+  color: var(--primary);
   font-size: 13px;
   margin-top: 12px;
   white-space: pre-wrap;
@@ -154,17 +152,16 @@ input:focus {
   border: none;
   border-radius: var(--radius-md);
   cursor: pointer;
-  background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+  background: linear-gradient(135deg, #fb7185, var(--primary));
   color: #fff;
   font-size: 17px;
   font-weight: 700;
   font-family: var(--font-head);
-  box-shadow: 0 8px 26px rgba(255, 110, 199, 0.3);
-  transition: transform 0.15s, box-shadow 0.2s;
+  box-shadow: 0 8px 26px rgba(244, 63, 94, 0.3);
+  transition: transform 0.15s;
 }
 .submit-btn:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 12px 36px rgba(255, 110, 199, 0.45);
 }
 .switch {
   text-align: center;
@@ -173,6 +170,6 @@ input:focus {
   color: var(--text-dim);
 }
 .switch a {
-  color: #a5b4fc;
+  color: var(--primary);
 }
 </style>

@@ -10,27 +10,61 @@ const token = params.get('token') || getToken() || ''
 const root = document.getElementById('app')!
 root.innerHTML = `
   <div id="alert" style="
-    position:fixed; top:40%; left:50%; transform:translate(-50%,-50%) scale(0) rotate(-3deg);
-    padding:30px 52px; border-radius:26px; text-align:center;
-    box-shadow:0 0 60px rgba(255,110,199,.6), 0 20px 40px rgba(0,0,0,.5);
-    border:3px solid rgba(255,255,255,.5); opacity:0;
-    transition:transform .55s cubic-bezier(.2,1.6,.4,1), opacity .3s;
-    font-family:'Noto Sans Thai','Segoe UI',sans-serif;">
-    <div style="position:absolute; inset:0; border-radius:23px; overflow:hidden; pointer-events:none;">
-      <div id="a-shine" style="position:absolute; top:-60%; left:-80%; width:50%; height:220%;
-        background:linear-gradient(100deg, transparent, rgba(255,255,255,.35), transparent);
+    position:fixed; top:44%; left:50%; transform:translate(-50%,-50%) scale(0) rotate(-2deg);
+    width:560px; padding:26px 30px 22px; border-radius:22px; text-align:left;
+    background:linear-gradient(160deg, rgba(17,26,45,.94), rgba(11,17,32,.96));
+    border:1.5px solid rgba(148,163,184,.28);
+    box-shadow:0 24px 70px rgba(0,0,0,.6), 0 0 70px rgba(244,63,94,.28);
+    opacity:0; transition:transform .55s cubic-bezier(.2,1.6,.4,1), opacity .3s;
+    font-family:'Noto Sans Thai','Segoe UI',sans-serif; color:#e8eef9;">
+    <div style="position:absolute; inset:0; border-radius:22px; overflow:hidden; pointer-events:none; border-radius:22px;">
+      <div id="a-shine" style="position:absolute; top:-60%; left:-80%; width:45%; height:220%;
+        background:linear-gradient(100deg, transparent, rgba(255,255,255,.18), transparent);
         transform:rotate(15deg);"></div>
     </div>
-    <div id="a-icon" style="font-size:54px; animation:bounce 1s infinite alternate; position:relative;">❤️</div>
-    <img id="a-img" alt="" style="display:none; max-width:260px; max-height:160px; border-radius:12px; margin-top:10px; position:relative;">
-    <div id="a-name" style="font-size:27px; font-weight:700; color:#fff; margin-top:8px; text-shadow:0 2px 8px rgba(0,0,0,.4); position:relative;"></div>
-    <div id="a-amount" style="font-size:44px; font-weight:800; color:#ffe066; text-shadow:0 2px 10px rgba(0,0,0,.5); margin-top:2px; font-family:'Kanit',sans-serif; position:relative;"></div>
-    <div id="a-msg" style="font-size:17px; color:#fff; margin-top:10px; max-width:430px; text-shadow:0 1px 4px rgba(0,0,0,.4); position:relative;"></div>
+    <!-- header row -->
+    <div id="a-head" style="display:flex; align-items:center; justify-content:space-between; position:relative;">
+      <span id="a-badge" style="display:inline-flex; align-items:center; gap:7px; padding:7px 16px;
+        border-radius:999px; font-size:14px; font-weight:800; font-family:'Plus Jakarta Sans',sans-serif;
+        background:linear-gradient(90deg,#fb7185,#f43f5e); color:#fff;">
+        ❤️ SUPER CHAT DONATION
+      </span>
+      <span id="a-tts" style="display:none; align-items:center; gap:7px; padding:6px 13px; border-radius:999px;
+        font-size:12px; font-weight:700; background:rgba(16,185,129,.15); color:#34d399;">🔊 TH-TTS</span>
+    </div>
+    <!-- donor row -->
+    <div style="display:flex; align-items:center; gap:16px; margin-top:18px; position:relative;">
+      <div id="a-avatar" style="width:64px; height:64px; border-radius:50%; flex-shrink:0;
+        background:linear-gradient(135deg,#f43f5e,#a855f7); display:flex; align-items:center;
+        justify-content:center; font-size:26px; font-weight:800; color:#fff; border:3px solid rgba(255,255,255,.25);">💗</div>
+      <div>
+        <div style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;">
+          <span id="a-name" style="font-size:24px; font-weight:700; color:#fff;"></span>
+          <span style="font-size:13px; color:#94a3b8;">ส่งกำลังใจ</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:12px;">
+          <span id="a-amount" style="font-size:42px; font-weight:800; font-family:'Plus Jakarta Sans',sans-serif;
+            background:linear-gradient(90deg,#fde68a,#fbbf24); -webkit-background-clip:text; background-clip:text; color:transparent;"></span>
+          <span id="a-tier" style="padding:4px 13px; border-radius:8px; font-size:12px; font-weight:800;
+            letter-spacing:.5px; font-family:'Plus Jakarta Sans',sans-serif; background:rgba(251,191,36,.15); color:#fbbf24;">GOLD TIER</span>
+        </div>
+      </div>
+    </div>
+    <!-- message bubble -->
+    <div id="a-msg-wrap" style="margin-top:16px; padding:14px 18px; border-radius:14px;
+      background:rgba(148,163,184,.1); border:1px solid rgba(148,163,184,.15); position:relative;">
+      <div id="a-msg" style="font-size:16px; line-height:1.6; color:#e2e8f0;"></div>
+    </div>
+    <!-- footer -->
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-top:14px; position:relative;">
+      <span id="a-sound" style="font-size:12px; color:#94a3b8;">♪ เสียงประกอบ</span>
+      <span style="font-size:12px; color:#f43f5e; font-weight:700;">● Donate Me ❤️ Engine</span>
+    </div>
   </div>
   <style>
-    @keyframes bounce { from { transform:translateY(0); } to { transform:translateY(-10px); } }
+    @keyframes bounce { from { transform:translateY(0); } to { transform:translateY(-8px); } }
     @keyframes shine { from { left:-80%; } to { left:160%; } }
-    .confetti { position:fixed; font-size:22px; pointer-events:none; animation:fall 3s linear forwards; }
+    .confetti { position:fixed; font-size:22px; pointer-events:none; animation:fall 3s linear forwards; z-index:-1; }
     @keyframes fall { to { transform:translateY(105vh) rotate(720deg); opacity:0; } }
   </style>
 `
@@ -38,11 +72,14 @@ root.innerHTML = `
 document.body.style.cssText = 'margin:0;height:100%;background:rgba(0,0,0,0);overflow:hidden;font-family:Segoe UI,Noto Sans Thai,sans-serif'
 
 const alertBox = root.querySelector<HTMLElement>('#alert')!
-const elIcon = root.querySelector<HTMLElement>('#a-icon')!
-const elImg = root.querySelector<HTMLImageElement>('#a-img')!
+const elBadge = root.querySelector<HTMLElement>('#a-badge')!
+const elTts = root.querySelector<HTMLElement>('#a-tts')!
+const elAvatar = root.querySelector<HTMLElement>('#a-avatar')!
 const elName = root.querySelector<HTMLElement>('#a-name')!
 const elAmount = root.querySelector<HTMLElement>('#a-amount')!
+const elTier = root.querySelector<HTMLElement>('#a-tier')!
 const elMsg = root.querySelector<HTMLElement>('#a-msg')!
+const elSound = root.querySelector<HTMLElement>('#a-sound')!
 const elShine = root.querySelector<HTMLElement>('#a-shine')!
 
 function playShine() {
@@ -51,11 +88,14 @@ function playShine() {
   elShine.style.animation = 'shine 1.1s ease-out .35s'
 }
 
-const THEMES: Record<string, { bg: string; glow: string; icon: string }> = {
-  pink: { bg: 'linear-gradient(135deg, rgba(255,110,199,.95), rgba(120,115,245,.95))', glow: 'rgba(255,110,199,.6)', icon: '❤️' },
-  blue: { bg: 'linear-gradient(135deg, rgba(56,132,255,.95), rgba(26,42,108,.95))', glow: 'rgba(56,132,255,.6)', icon: '💙' },
-  green: { bg: 'linear-gradient(135deg, rgba(34,197,94,.95), rgba(15,90,60,.95))', glow: 'rgba(34,197,94,.6)', icon: '💚' },
-  dark: { bg: 'linear-gradient(135deg, rgba(30,30,40,.97), rgba(10,10,20,.97))', glow: 'rgba(255,255,255,.15)', icon: '🖤' },
+// tier ตามยอด — สไตล์ SUPER CHAT ตามดีไซน์ Stitch
+function tierOf(amount: number): {
+  scale: number; badge: string; tier: string; tierColor: string; avatar: string;
+  confettiCount: number; soundLabel: string;
+} {
+  if (amount >= 500) return { scale: 1.22, badge: '❤️ SUPER CHAT DONATION', tier: 'GOLD TIER', tierColor: '#fbbf24', avatar: '👑', confettiCount: 80, soundLabel: '♪ Sound: Level_Up_Super.mp3' }
+  if (amount >= 100) return { scale: 1.08, badge: '⭐ VIP DONATION', tier: 'VIP TIER', tierColor: '#a78bfa', avatar: '💜', confettiCount: 50, soundLabel: '♪ Sound: Vip_Glow.mp3' }
+  return { scale: 1, badge: '❤️ DONATION', tier: 'SUPPORT TIER', tierColor: '#34d399', avatar: '💗', confettiCount: 30, soundLabel: '♪ Sound: Standard_Support.mp3' }
 }
 
 let settings: Settings = {
@@ -69,13 +109,6 @@ let settings: Settings = {
   show_leaderboard: true,
 }
 
-// tier เอฟเฟกต์ตามระดับยอดโดเนต
-function tierOf(amount: number): { scale: number; emoji: string; confettiCount: number; extra: string } {
-  if (amount >= 500) return { scale: 1.35, emoji: '🤩', confettiCount: 80, extra: 'SUPER CHAT!' }
-  if (amount >= 100) return { scale: 1.15, emoji: '🎉', confettiCount: 50, extra: '' }
-  return { scale: 1, emoji: '', confettiCount: 30, extra: '' }
-}
-
 async function loadSettings() {
   if (!token) return
   try {
@@ -86,10 +119,15 @@ async function loadSettings() {
 }
 
 function applyTheme() {
-  const t = THEMES[settings.theme] ?? THEMES.pink!
-  alertBox.style.background = t.bg
-  alertBox.style.boxShadow = `0 0 60px ${t.glow}, 0 20px 40px rgba(0,0,0,.5)`
-  elIcon.textContent = t.icon
+  // ธีมสี accent ของ badge ตาม settings.theme (เข้ากับกรอบกระจกมืดตายดีไซน์ Stitch)
+  const hues: Record<string, [string, string]> = {
+    pink: ['#fb7185', '#f43f5e'],
+    blue: ['#60a5fa', '#3b82f6'],
+    green: ['#34d399', '#10b981'],
+    dark: ['#94a3b8', '#64748b'],
+  }
+  const [c1, c2] = hues[settings.theme] ?? hues.pink!
+  elBadge.style.background = `linear-gradient(90deg, ${c1}, ${c2})`
 }
 
 // ---------- เสียงสังเคราะห์ Web Audio (ไม่ต้องมีไฟล์) ----------
@@ -146,29 +184,23 @@ function showAlert(d: DonationEvent) {
   const tier = tierOf(d.amount)
   elName.textContent = d.donor_name
   elAmount.textContent = `฿${d.amount.toLocaleString()}`
+  elAvatar.textContent = tier.avatar
   elMsg.textContent = d.message
-  // media alert: รูป/GIF จาก settings (เฉพาะ https URL ที่ตรวจแล้วฝั่ง server)
-  if (settings.alert_image_url) {
-    elImg.src = settings.alert_image_url
-    elImg.style.display = 'inline-block'
-  } else {
-    elImg.style.display = 'none'
-  }
+  elBadge.textContent = tier.badge
+  elTier.textContent = tier.tier
+  elTier.style.color = tier.tierColor
+  elTier.style.background = `${tier.tierColor}26`
+  elSound.textContent = tier.soundLabel
+  elTts.style.display = d.sound === 'tts' ? 'inline-flex' : 'none'
   // tier เอฟเฟกต์: ยอดสูง = ป็อบอัพใหญ่ขึ้น + คอนเฟตติเยอะขึ้น
-  alertBox.style.transform = `translate(-50%,-50%) scale(0)`
+  alertBox.style.transform = `translate(-50%,-50%) scale(0) rotate(-2deg)`
   applyTheme()
-  if (tier.emoji) elIcon.textContent = tier.emoji
-  elIcon.style.animationDuration = tier.scale >= 1.35 ? '0.4s' : '1s'
   requestAnimationFrame(() => {
     alertBox.style.transform = `translate(-50%,-50%) scale(${tier.scale}) rotate(0deg)`
     alertBox.style.opacity = '1'
   })
   playShine()
   confetti(tier.confettiCount)
-
-  if (tier.extra) {
-    elMsg.textContent = `${tier.extra} ${d.message}`.trim()
-  }
 
   if (d.sound === 'tts' && settings.tts_enabled) {
     speak(d)

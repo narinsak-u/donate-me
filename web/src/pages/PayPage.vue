@@ -9,13 +9,15 @@ const router = useRouter()
 
 const qrUrl = computed(() => (route.query.qr as string) || '')
 const payUrl = computed(() => (route.query.pay as string) || '')
+const amount = computed(() => Number(route.query.amount ?? 0))
 const status = ref<DonationStatusResponse['status'] | null>(null)
 let timer: ReturnType<typeof setInterval> | undefined
 
-// QR อายุ 15 นาที
 const secondsLeft = ref(15 * 60)
 
 onMounted(() => {
+  const t = localStorage.getItem('donateme_theme') ?? 'dark'
+  document.documentElement.setAttribute('data-theme', t)
   timer = setInterval(async () => {
     secondsLeft.value = Math.max(0, secondsLeft.value - 1)
     try {
@@ -42,173 +44,127 @@ const countdown = computed(() => {
 
 <template>
   <div class="page">
-    <div class="aurora" />
-    <div class="stars" />
-
     <!-- กำลังรอชำระเงิน -->
-    <div v-if="status === null || status === 'pending'" class="card">
-      <div class="badge">⏳ รอการชำระเงิน</div>
-      <h1>สแกนจ่ายผ่าน PromptPay</h1>
-      <p class="subtitle">เปิดแอปธนาคาร → สแกน QR → ยืนยันยอดตามที่กรอกไว้</p>
-
-      <div class="qr-frame">
-        <img v-if="qrUrl" :src="qrUrl" alt="PromptPay QR" class="qr" />
-        <div class="qr-corner tl" /><div class="qr-corner tr" /><div class="qr-corner bl" /><div class="qr-corner br" />
+    <div v-if="status === null || status === 'pending'" class="layout">
+      <div class="card form-card">
+        <div class="card-head">
+          <h2>⏳ รอการชำระเงิน</h2>
+          <span class="badge badge-pink">PromptPay</span>
+        </div>
+        <p class="sub">เปิดแอปธนาคาร → สแกน QR → ยืนยันยอดตามที่กรอกไว้</p>
+        <ol class="steps">
+          <li><b>Step 1</b> เปิดแอปธนาคารแล้วเลือกสแกน QR</li>
+          <li><b>Step 2</b> เช็คยอดเงินให้ตรงกับที่กรอก</li>
+          <li><b>Step 3</b> ยืนยันโอน — Alert จะเด้งในฉากสตรีมทันที</li>
+        </ol>
+        <button class="btn-ghost back" @click="router.push('/')">← ยกเลิกและกลับหน้าโดเนต</button>
       </div>
 
-      <p class="countdown">QR หมดอายุใน <strong>{{ countdown }}</strong></p>
+      <div class="card qr-card">
+        <div class="card-head">
+          <span class="badge badge-green">● เชื่อมต่อระบบสำเร็จ</span>
+          <span class="qr-tag">Thai QR Payment</span>
+        </div>
+        <div class="qr-box">
+          <div class="qr-head">PromptPay พร้อมเพย์</div>
+          <div class="qr-body">
+            <img v-if="qrUrl" :src="qrUrl" alt="PromptPay QR" class="qr" />
+            <span class="qr-heart">❤️</span>
+          </div>
+          <div class="qr-amount">฿{{ amount.toLocaleString() }}.00</div>
+        </div>
 
-      <a v-if="payUrl" :href="payUrl" target="_blank" class="mock-btn">
-        🧪 จำลองการชำระเงิน (เปิดหน้า Mock Bank)
-      </a>
-      <p class="hint">ระบบ mockup — ยังไม่มีการตัดเงินจริง กดปุ่มด้านบนเพื่อจำลองว่าจ่ายแล้ว</p>
+        <div class="expire-box">
+          <b>⏳ QR หมดอายุในอีก {{ countdown }} นาที</b>
+          <p>เมื่อระบบตรวจสอบรายการ สถานะจะเปลี่ยนเป็นสำเร็จ Alert จะเด้งในฉากสตรีมภายใน 1-3 วินาที</p>
+        </div>
+
+        <div class="actions">
+          <a v-if="payUrl" :href="payUrl" target="_blank" class="btn-primary" style="text-decoration: none">
+            🧪 จำลองการชำระเงิน
+          </a>
+          <button class="btn-ghost" @click="router.push('/')">↗ ยกเลิกลิงก์นี้</button>
+        </div>
+        <p class="hint">ระบบ mockup — ยังไม่มีการตัดเงินจริง กดปุ่มจำลองเพื่อทดสอบ Alert</p>
+      </div>
     </div>
 
     <!-- จ่ายสำเร็จ -->
-    <div v-else-if="status === 'paid'" class="card success">
-      <div class="big bounce">🎉</div>
-      <h1>โดเนตสำเร็จ!</h1>
-      <p class="subtitle">ขอบคุณมาก ๆ ที่สนับสนุน ❤️ ไปดูป็อบอัพบนหน้าจอ stream ได้เลย</p>
+    <div v-else-if="status === 'paid'" class="single">
+      <div class="card result success">
+        <div class="big">🎉</div>
+        <h1>โดเนตสำเร็จ!</h1>
+        <p class="sub">ขอบคุณมาก ๆ ที่สนับสนุน ❤️ ไปดูป็อบอัพบนหน้าจอ stream ได้เลย</p>
+        <div class="badge badge-green">Alert ถูกส่งแล้ว</div>
+      </div>
     </div>
 
     <!-- จ่ายไม่สำเร็จ -->
-    <div v-else class="card failed">
-      <div class="big">😢</div>
-      <h1>ไม่สำเร็จ / หมดอายุ</h1>
-      <p class="subtitle">ลองโดเนตใหม่อีกครั้งได้เลยนะ</p>
-      <button class="retry" @click="router.push('/')">← กลับไปโดเนตใหม่</button>
+    <div v-else class="single">
+      <div class="card result failed">
+        <div class="big">😢</div>
+        <h1>ไม่สำเร็จ / หมดอายุ</h1>
+        <p class="sub">ลองโดเนตใหม่อีกครั้งได้เลยนะ</p>
+        <button class="btn-primary" @click="router.push('/')">← กลับไปโดเนตใหม่</button>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.page {
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-  position: relative;
-  background: linear-gradient(160deg, var(--bg-0) 0%, var(--bg-1) 45%, #0f3460 100%);
-}
+.page { min-height: 100vh; background: var(--bg); display: flex; align-items: flex-start; justify-content: center; padding: 40px 20px; }
+.layout { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; width: 100%; max-width: 900px; align-items: start; }
+.single { width: 100%; max-width: 480px; }
 .card {
-  position: relative;
-  z-index: 1;
-  width: 100%;
-  max-width: 430px;
-  text-align: center;
-  background: var(--glass);
-  backdrop-filter: blur(20px);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 38px 34px;
-  box-shadow: var(--shadow-card);
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-xl); padding: 26px; box-shadow: var(--shadow-card);
 }
-.badge {
-  display: inline-block;
-  background: rgba(255, 224, 102, 0.14);
-  border: 1px solid rgba(255, 224, 102, 0.35);
-  color: var(--gold);
-  font-size: 12.5px;
-  font-weight: 600;
-  padding: 6px 16px;
-  border-radius: 999px;
-  margin-bottom: 16px;
+.card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+h2 { font-size: 17px; }
+h1 { font-size: 26px; }
+.sub { color: var(--text-dim); font-size: 14px; margin: 8px 0 18px; line-height: 1.6; }
+.steps { list-style: none; display: grid; gap: 10px; }
+.steps li {
+  display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+  border-radius: var(--radius-md); border: 1px solid var(--border); background: var(--bg-input);
+  font-size: 13.5px; color: var(--text-dim);
 }
-h1 {
-  font-size: 25px;
-  font-weight: 700;
+.steps b {
+  padding: 3px 9px; border-radius: 7px; font-size: 11px;
+  background: var(--emerald-soft); color: var(--emerald);
 }
-.subtitle {
-  color: var(--text-dim);
-  font-size: 14px;
-  margin: 8px 0 26px;
+.back { margin-top: 18px; }
+.qr-card { text-align: center; }
+.qr-tag { font-size: 12px; color: var(--text-faint); font-weight: 600; }
+.qr-box {
+  max-width: 300px; margin: 4px auto 0; border-radius: var(--radius-lg); overflow: hidden;
+  background: #fff; color: #0f172a; box-shadow: 0 8px 30px rgba(15, 23, 42, 0.25);
+  border: 1px solid #e2e8f0;
 }
-.qr-frame {
-  position: relative;
-  display: inline-block;
-  padding: 14px;
-  background: #fff;
-  border-radius: 20px;
-  box-shadow: 0 0 50px rgba(255, 255, 255, 0.12);
+.qr-head { background: #1e3a8a; color: #fff; font-size: 13.5px; font-weight: 700; padding: 10px; }
+.qr-body { position: relative; padding: 18px; }
+.qr { width: 210px; height: 210px; image-rendering: pixelated; }
+.qr-heart {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 36px; height: 36px; border-radius: 50%;
+  background: var(--primary); color: #fff; font-size: 16px;
+  display: flex; align-items: center; justify-content: center;
+  border: 3px solid #fff; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
-.qr {
-  width: 224px;
-  height: 224px;
-  display: block;
-  image-rendering: pixelated;
+.qr-amount { font-family: var(--font-head); font-size: 22px; font-weight: 800; padding: 6px 0 18px; }
+.expire-box {
+  margin: 16px auto 0; max-width: 340px; padding: 13px 15px; border-radius: var(--radius-md);
+  background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.35);
 }
-.qr-corner {
-  position: absolute;
-  width: 22px;
-  height: 22px;
-  border: 3px solid var(--accent-1);
-}
-.tl { top: -3px; left: -3px; border-right: none; border-bottom: none; border-radius: 10px 0 0 0; }
-.tr { top: -3px; right: -3px; border-left: none; border-bottom: none; border-radius: 0 10px 0 0; }
-.bl { bottom: -3px; left: -3px; border-right: none; border-top: none; border-radius: 0 0 0 10px; }
-.br { bottom: -3px; right: -3px; border-left: none; border-top: none; border-radius: 0 0 10px 0; }
-.countdown {
-  margin-top: 18px;
-  font-size: 14px;
-  color: var(--text-dim);
-  font-variant-numeric: tabular-nums;
-}
-.countdown strong {
-  color: var(--gold);
-}
-.mock-btn {
-  display: block;
-  margin-top: 22px;
-  padding: 14px;
-  border-radius: var(--radius-md);
-  background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
-  color: #fff;
-  font-weight: 700;
-  text-decoration: none;
-  font-size: 15px;
-  box-shadow: 0 8px 26px rgba(255, 110, 199, 0.3);
-  transition: transform 0.15s;
-}
-.mock-btn:hover {
-  transform: translateY(-2px);
-}
-.hint {
-  margin-top: 14px;
-  font-size: 12px;
-  color: var(--text-faint);
-}
-.big {
-  font-size: 68px;
-}
-.bounce {
-  animation: pop 0.6s cubic-bezier(0.2, 1.6, 0.4, 1);
-}
-@keyframes pop {
-  from { transform: scale(0); }
-  to { transform: scale(1); }
-}
-.success {
-  border-color: rgba(46, 230, 168, 0.4);
-}
-.success h1 {
-  color: var(--success);
-}
-.failed {
-  border-color: rgba(253, 93, 143, 0.4);
-}
-.retry {
-  margin-top: 14px;
-  padding: 13px 30px;
-  border: 1px solid var(--border-bright);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  background: var(--glass-strong);
-  color: var(--text);
-  font-weight: 600;
-  transition: background 0.15s;
-}
-.retry:hover {
-  background: rgba(255, 255, 255, 0.18);
-}
+.expire-box b { font-size: 13px; color: var(--gold); }
+.expire-box p { font-size: 12px; color: var(--text-dim); margin-top: 5px; line-height: 1.6; }
+.actions { display: flex; gap: 10px; justify-content: center; margin-top: 18px; }
+.hint { margin-top: 12px; font-size: 11.5px; color: var(--text-faint); }
+.result { text-align: center; padding: 44px 32px; }
+.big { font-size: 64px; margin-bottom: 8px; }
+.success { border-color: rgba(16, 185, 129, 0.4); }
+.success h1 { color: var(--emerald); }
+.failed { border-color: rgba(244, 63, 94, 0.4); }
+.failed h1 { color: var(--primary); }
+@media (max-width: 780px) { .layout { grid-template-columns: 1fr; } }
 </style>
