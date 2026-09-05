@@ -22,6 +22,7 @@ pub struct PublicProfile {
     pub username: String,
     pub display_name: String,
     pub goal_amount: i64,
+    pub goal_raised: i64,
     pub theme: String,
     pub show_leaderboard: bool,
 }
@@ -32,7 +33,9 @@ pub async fn public_profile(
     Path(username): Path<String>,
 ) -> Result<Json<PublicProfile>, (StatusCode, String)> {
     let row = sqlx::query(
-        "SELECT u.username, u.display_name, s.goal_amount, s.theme, s.show_leaderboard
+        "SELECT u.username, u.display_name, s.goal_amount, s.theme, s.show_leaderboard,
+                COALESCE((SELECT SUM(d.amount) FROM donations d
+                          WHERE d.user_id = u.id AND d.status = 'paid'), 0) AS goal_raised
          FROM users u LEFT JOIN settings s ON s.user_id = u.id
          WHERE u.username = ?",
     )
@@ -46,9 +49,53 @@ pub async fn public_profile(
         username: row.get("username"),
         display_name: row.get("display_name"),
         goal_amount: row.get::<Option<i64>, _>("goal_amount").unwrap_or(0),
+        goal_raised: row.get::<Option<i64>, _>("goal_raised").unwrap_or(0),
         theme: row.get::<Option<String>, _>("theme").unwrap_or_else(|| "pink".into()),
         show_leaderboard: row.get::<Option<i64>, _>("show_leaderboard").unwrap_or(1) != 0,
     }))
+}
+
+// ---------- Streamer directory (หน้าแรก) ----------
+
+#[derive(Serialize)]
+pub struct StreamerSummary {
+    pub username: String,
+    pub display_name: String,
+    pub goal_amount: i64,
+    pub goal_raised: i64,
+    pub donor_count: i64,
+}
+
+/// GET /api/streamers — รายชื่อสตรีมเมอร์ทั้งหมด เรียงตามยอดระดมได้
+pub async fn list_streamers(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<StreamerSummary>>, (StatusCode, String)> {
+    let rows = sqlx::query(
+        "SELECT u.username, u.display_name,
+                COALESCE(s.goal_amount, 0) AS goal_amount,
+                COALESCE((SELECT SUM(d.amount) FROM donations d
+                          WHERE d.user_id = u.id AND d.status = 'paid'), 0) AS goal_raised,
+                (SELECT COUNT(DISTINCT d.donor_name) FROM donations d
+                 WHERE d.user_id = u.id AND d.status = 'paid') AS donor_count
+         FROM users u
+         LEFT JOIN settings s ON s.user_id = u.id
+         ORDER BY goal_raised DESC, u.username ASC",
+    )
+    .fetch_all(&state.db)
+    .await
+    .map_err(db_err)?;
+
+    let list = rows
+        .iter()
+        .map(|r| StreamerSummary {
+            username: r.get("username"),
+            display_name: r.get("display_name"),
+            goal_amount: r.get("goal_amount"),
+            goal_raised: r.get("goal_raised"),
+            donor_count: r.get("donor_count"),
+        })
+        .collect();
+    Ok(Json(list))
 }
 
 // ---------- Top donators (leaderboard) ----------

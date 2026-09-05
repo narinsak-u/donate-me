@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api, getToken, getUser, type PublicUser, type Settings } from '../api/auth'
 import { dashApi, type DonationItem, type Stats } from '../api/dashboard'
-import { applyTheme, toggleTheme } from '../theme'
+import { applyTheme } from '../theme'
 import DonationChart from '../components/DonationChart.vue'
 import WalletTab from '../components/WalletTab.vue'
 
@@ -18,6 +18,8 @@ const obsCopied = ref(false)
 const stats = ref<Stats | null>(null)
 const items = ref<DonationItem[]>([])
 const search = ref('')
+const dateFrom = ref('')
+const dateTo = ref('')
 const page = ref(1)
 const totalPages = ref(1)
 const settings = ref<Settings | null>(null)
@@ -31,7 +33,7 @@ onMounted(async () => {
     return
   }
   if (user.value) {
-    donateLink.value = `${location.origin}/?u=${user.value.username}`
+    donateLink.value = `${location.origin}/u/${user.value.username}`
     overlayUrl.value = `${location.origin}/overlay.html?token=${getToken() ?? ''}`
   }
   const [s, st] = await Promise.all([dashApi.stats(), api.getSettings()])
@@ -109,8 +111,24 @@ async function uploadSound() {
   }
 }
 
-async function testAlert() {
-  await api.testAlert()
+const testSending = ref(false)
+const testDone = ref(false)
+const testError = ref('')
+
+async function testAlert(amount = 100) {
+  testSending.value = true
+  testDone.value = false
+  testError.value = ''
+  try {
+    await api.testAlert(amount)
+    // alert เด้งใน overlay — ทั้งใน OBS และพรีวิวสดในการ์ดนี้
+    testDone.value = true
+    setTimeout(() => (testDone.value = false), 4000)
+  } catch (e) {
+    testError.value = e instanceof Error ? e.message : 'ส่งคำสั่งทดสอบไม่สำเร็จ'
+  } finally {
+    testSending.value = false
+  }
 }
 
 function logout() {
@@ -202,7 +220,7 @@ const themeOptions = [
         <span class="live-pill">● LIVE ON AIR</span>
         <span class="today-pill">ยอดสะสมวันนี้ <b>฿{{ (stats?.total_today ?? 0).toLocaleString() }}.00</b></span>
         <div class="topbar-right">
-          <button class="btn-primary test-btn" @click="testAlert">▶ ทดสอบ Alert</button>
+          <button class="btn-primary test-btn" @click="testAlert()">▶ ทดสอบ Alert</button>
           <div class="profile">
             <div class="profile-avatar">{{ user?.display_name?.[0] ?? '?' }}</div>
             <div class="profile-info">
@@ -288,24 +306,33 @@ const themeOptions = [
                 <h2>🔔 ทดสอบ Alert</h2>
                 <span class="badge badge-green">OBS LINKED</span>
               </div>
-              <p class="muted">กดปุ่มเพื่อทดสอบป็อบอัพตามระดับยอด — จะเด้งจริงบน OBS ทันที</p>
+              <p class="muted">กดปุ่มเพื่อทดสอบป็อบอัพตามระดับยอด — เด้งทั้งพรีวิวด้านล่างและบน OBS ทันที</p>
               <div class="tiers">
-                <button class="tier" @click="testAlert">
+                <button class="tier" :disabled="testSending" @click="testAlert(20)">
                   <b class="tier-amt t20">฿20</b>
                   <div><b>Alert ฝั่งปกติ ฿20</b><span>ป็อปปกติ + คอนเฟตติสี</span></div>
                   <i class="play">▶</i>
                 </button>
-                <button class="tier" @click="testAlert">
+                <button class="tier" :disabled="testSending" @click="testAlert(100)">
                   <b class="tier-amt t100">฿100</b>
                   <div><b>Alert ระดับกลาง ฿100+</b><span>แอนิเมชันพิเศษ + ข้อความ TTS เต็มรูปแบบ</span></div>
                   <i class="play">▶</i>
                 </button>
-                <button class="tier gold" @click="testAlert">
+                <button class="tier gold" :disabled="testSending" @click="testAlert(500)">
                   <b class="tier-amt t500">฿500+</b>
                   <div><b>Super Chat ฿500+</b><span>ทองคำ + TTS เร่งเสียง + คอนเฟตติลูกใหญ่</span></div>
                   <i class="play">▶</i>
                 </button>
               </div>
+              <p v-if="testDone" class="test-status ok" role="status">✓ ส่งแล้ว — alert กำลังเด้งในพรีวิวด้านล่าง (และบน OBS ถ้าเปิดไว้)</p>
+              <p v-else-if="testError" class="test-status err" role="alert">{{ testError }}</p>
+
+              <div class="preview-shell">
+                <div class="preview-head">🔍 พรีวิวสด — เหมือนใน OBS</div>
+                <iframe v-if="overlayUrl" :src="overlayUrl" class="preview-frame" title="พรีวิว Overlay"></iframe>
+                <p v-else class="muted small preview-loading">กำลังโหลดพรีวิว...</p>
+              </div>
+
               <p class="muted small" style="margin-top: 14px">Latency: ~120ms · <a href="/overlay.html" target="_blank" style="color: var(--primary)">เปิดหน้า Overlay ↗</a></p>
             </section>
           </div>
@@ -463,7 +490,7 @@ const themeOptions = [
 
             <div class="save-row">
               <button class="btn-primary" @click="save">💾 บันทึกการตั้งค่า</button>
-              <button class="btn-ghost" @click="testAlert">▶ ทดสอบแจ้งเตือน</button>
+              <button class="btn-ghost" @click="testAlert()">▶ ทดสอบแจ้งเตือน</button>
               <a href="/overlay.html" target="_blank" class="ghost-link">เปิดหน้า Overlay (OBS) ↗</a>
             </div>
           </section>
@@ -663,6 +690,29 @@ input, select { font-family: var(--font-body); }
 
 /* tiers */
 .tiers { display: grid; gap: 9px; margin-top: 12px; }
+.test-status { margin-top: 12px; padding: 10px 14px; border-radius: var(--radius-md); font-size: 13px; font-weight: 600; }
+.test-status.ok { background: var(--emerald-soft); color: var(--emerald); }
+.test-status.err { background: var(--primary-soft); color: var(--primary); }
+.preview-shell {
+  margin-top: 16px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background:
+    linear-gradient(45deg, rgba(148, 163, 184, 0.06) 25%, transparent 25%, transparent 75%, rgba(148, 163, 184, 0.06) 75%) 0 0 / 22px 22px,
+    linear-gradient(45deg, rgba(148, 163, 184, 0.06) 25%, transparent 25%, transparent 75%, rgba(148, 163, 184, 0.06) 75%) 11px 11px / 22px 22px,
+    #0b0f1a;
+  overflow: hidden;
+}
+.preview-head {
+  padding: 8px 14px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #94a3b8;
+  background: rgba(148, 163, 184, 0.08);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+}
+.preview-frame { display: block; width: 100%; height: 260px; border: none; background: transparent; }
+.preview-loading { padding: 40px; text-align: center; }
 .tier {
   display: flex; align-items: center; gap: 14px; padding: 12px 14px;
   border-radius: var(--radius-md); border: 1px solid var(--border);

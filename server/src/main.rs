@@ -336,12 +336,25 @@ async fn events(
     Ok(Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15))))
 }
 
-async fn test_alert(State(state): State<AppState>, user: auth::AuthUser) -> Json<HashMap<&'static str, bool>> {
+#[derive(serde::Deserialize, Default)]
+struct TestAlertBody {
+    amount: Option<i64>,
+}
+
+async fn test_alert(
+    State(state): State<AppState>,
+    user: auth::AuthUser,
+    body: Option<Json<TestAlertBody>>,
+) -> Json<HashMap<&'static str, bool>> {
+    let amount = body
+        .and_then(|Json(b)| b.amount)
+        .unwrap_or(100)
+        .clamp(1, 100_000);
     let _ = state.tx.send(Arc::new(DonationEvent {
         user_id: user.user_id,
         id: "test".into(),
         donor_name: "ทดสอบระบบ".into(),
-        amount: 100,
+        amount,
         message: "นี่คือการทดสอบแจ้งเตือน".into(),
         sound: "chime".into(),
     }));
@@ -430,6 +443,7 @@ async fn main() {
     let app = Router::new()
         .route("/healthz", get(healthz))
         .route("/", get(og::spa_index))
+        .route("/u/{username}", get(og::spa_index_path))
         .route("/og/og-card.png", get(|| async { og::og_png_response() }))
         .route(
             "/api/donate",
@@ -459,6 +473,7 @@ async fn main() {
         .route("/api/u/{username}", get(users::public_profile))
         .route("/api/u/{username}/top", get(users::top_donators))
         .route("/api/u/{username}/recent", get(users::recent_donations))
+        .route("/api/streamers", get(users::list_streamers))
         .route("/api/me/settings", get(users::get_settings).put(users::update_settings))
         .route("/api/me/stats", get(dashboard::stats))
         .route("/api/me/donations", get(dashboard::history))

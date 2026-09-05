@@ -139,26 +139,24 @@ function onToggle() {
 }
 @media (max-width: 640px) {
   .topbar {
-    flex-wrap: wrap;
     gap: 10px;
     padding: 10px 14px;
   }
   .logo {
     flex: 1;
+    min-width: 0;
   }
-  .topnav {
-    order: 3;
-    width: 100%;
-    overflow-x: auto;
-  }
-  .topnav a {
+  .logo b {
     white-space: nowrap;
-    padding: 7px 12px;
-    font-size: 12.5px;
+  }
+  /* มือถือ: ซ่อนเมนูการตลาด — ผู้บริจาคไม่ใช้ และเป็นหน้า minimal */
+  .topnav {
+    display: none;
   }
   .join-btn {
     padding: 7px 14px;
     font-size: 12.5px;
+    white-space: nowrap;
   }
 }
 </style>

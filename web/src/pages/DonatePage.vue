@@ -1,29 +1,25 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { api, type PublicProfile, type TopDonator, type RecentDonation } from '../api/auth'
-import type { SoundKind } from '../api/auth'
+import { api, type PublicProfile, type TopDonator, type RecentDonation, type SoundKind } from '../api/auth'
+import { applyTheme } from '../theme'
+import { useDonationWatch } from '../composables/useDonationWatch'
+import SiteTopbar from '../components/SiteTopbar.vue'
 
+const props = defineProps<{ username?: string }>()
 const route = useRoute()
 const router = useRouter()
 const profile = ref<PublicProfile | null>(null)
 const topDonators = ref<TopDonator[]>([])
 const recent = ref<RecentDonation[]>([])
-const isDemoData = ref(false)
+const loadError = ref('')
 
-// ข้อมูลตัวอย่าง — ใช้แสดงแทนช่องว่างตอนที่ยังไม่มีโดเนตจริง
-const MOCK_TOP: TopDonator[] = [
-  { donor_name: 'ฟั่น HEARTROCKER', total: 15000, count: 42 },
-  { donor_name: 'MewSuppasit', total: 8500, count: 18 },
-  { donor_name: 'น้องเนยคัด', total: 5200, count: 12 },
-  { donor_name: 'Bank_Overload', total: 3400, count: 8 },
-  { donor_name: 'Cyber_Kaitom', total: 2990, count: 6 },
-]
-const MOCK_RECENT: RecentDonation[] = [
-  { donor_name: 'Gunz_lnwZa', amount: 300, message: 'พี่แนนสตรีมมิ่งเพราะสุดในจักรวาลเลยครับ', paid_at: Date.now() - 60_000 },
-  { donor_name: 'คุณปริสนธ์สปอนเซอร์', amount: 100, message: 'เว็บทำดีมากครับ ขอแสดงเป็นกำลังใจ 💗', paid_at: Date.now() - 240_000 },
-  { donor_name: 'Pluem_Ch', amount: 50, message: 'กราฟวิ่งไหว อุ่นใจมาก 5555', paid_at: Date.now() - 720_000 },
-]
+// หน้าโดเนตอยู่ที่ /u/:username — ลิงก์เก่าแบบ /?u= ถูก redirect ที่ router guard แล้ว
+const targetUsername = computed(
+  () => props.username || (route.query.u as string) || undefined,
+)
+
+// ---------- ฟอร์ม ----------
 const name = ref('')
 const amount = ref<number | null>(null)
 const message = ref('')
@@ -32,49 +28,41 @@ const anonymous = ref(false)
 const submitting = ref(false)
 const error = ref('')
 
-// ?u=username → โดเนตให้สตรีมเมอร์คนนั้น; ลิงก์เป็น /?u=xxx#/ (query อยู่ก่อน hash) ต้องอ่านจาก location.search
-const targetUsername =
-  new URLSearchParams(location.search).get('u') || (route.query.u as string) || undefined
+// ---------- สถานะหน้า: form → pay → paid/failed (in-place swap, ADR-0001) ----------
+const stage = ref<'form' | 'pay' | 'paid' | 'failed'>('form')
+const current = ref<{ id: string; qrUrl: string; payUrl: string; amount: number; sound: SoundKind; name: string } | null>(null)
+const { status, countdown, start, stop } = useDonationWatch()
+let resetTimer: ReturnType<typeof setTimeout> | undefined
 
-// theme toggle (dark = Minimal & Friendly, light = Clean Light Mode) — ใช้ theme.ts กลาง
-import { applyTheme } from '../theme'
-import SiteTopbar from '../components/SiteTopbar.vue'
-
-onMounted(() => {
-  applyTheme(theme.value as "dark" | "light")
-  if (targetUsername) {
-    api.publicProfile(targetUsername)
-      .then(async (p) => {
-        profile.value = p
-        if (p.show_leaderboard) {
-          const [top, rec] = await Promise.all([
-            api.topDonators(targetUsername).then((r) => r.slice(0, 5)),
-            api.recentDonations(targetUsername),
-          ])
-          isDemoData.value = top.length === 0 && rec.length === 0
-          topDonators.value = top.length ? top : MOCK_TOP
-          recent.value = rec.length ? rec : MOCK_RECENT
-        } else {
-          // ปิด leaderboard → ใช้ mock ใน live feed อย่างเดียว
-          isDemoData.value = true
-          recent.value = MOCK_RECENT
-        }
-      })
-      .catch(() => (error.value = 'ไม่พบสตรีมเมอร์นี้ — ตรวจลิงก์อีกครั้ง'))
-  } else {
-    // ไม่ได้ระบุ ?u= → ยังไม่มีข้อมูลให้ดึง ใช้ชุดตัวอย่างไปก่อน
-    isDemoData.value = true
-    topDonators.value = MOCK_TOP
-    recent.value = MOCK_RECENT
+watch(status, (s) => {
+  if (s === 'paid') {
+    stage.value = 'paid'
+    void refreshData() // อัปเดตแถบเป้าหมาย/กระดานด้วยข้อมูลหลังจ่าย
+    clearTimeout(resetTimer)
+    resetTimer = setTimeout(backToForm, 8000) // เฉลิมฉลองแป๊บเดียวแล้วรีเซ็ตรอโดเนตใหม่
+  } else if (s === 'expired' || s === 'failed') {
+    stage.value = 'failed'
   }
 })
 
-function timeAgo(ms: number): string {
-  const diff = Math.floor((Date.now() - ms) / 1000)
-  if (diff < 60) return `${diff} วินาทีที่แล้ว`
-  if (diff < 3600) return `${Math.floor(diff / 60)} นาทีที่แล้ว`
-  if (diff < 86400) return `${Math.floor(diff / 3600)} ชั่วโมงที่แล้ว`
-  return `${Math.floor(diff / 86400)} วันที่แล้ว`
+// ดึงข้อมูลสดของสตรีมเมอร์ — เรียกตอน mount และหลังจ่ายสำเร็จ
+async function refreshData() {
+  if (!targetUsername.value) return
+  try {
+    const p = await api.publicProfile(targetUsername.value)
+    profile.value = p
+    if (p.show_leaderboard) {
+      // ข้อมูลจริงเท่านั้น — ไม่มีก็แสดง empty state ตาม ADR-0002
+      const [top, rec] = await Promise.all([
+        api.topDonators(targetUsername.value).then((r) => r.slice(0, 5)),
+        api.recentDonations(targetUsername.value),
+      ])
+      topDonators.value = top
+      recent.value = rec
+    }
+  } catch {
+    if (!profile.value) loadError.value = 'ไม่พบสตรีมเมอร์นี้ — ตรวจลิงก์อีกครั้ง'
+  }
 }
 
 const presets = [
@@ -86,105 +74,162 @@ const presets = [
 const sounds: { value: SoundKind; label: string; color: string }[] = [
   { value: 'chime', label: 'กระดิ่ง', color: '#f43f5e' },
   { value: 'coin', label: 'เหรียญ', color: '#fbbf24' },
-  { value: 'fanfare', label: 'แตรวง', color: '#10b981' },
-  { value: 'tts', label: 'เสียงพูด', color: '#3b82f6' },
+  { value: 'fanfare', label: 'แตรวง', color: '#34d399' },
 ]
+
+const goalPct = computed(() => {
+  const p = profile.value
+  if (!p || p.goal_amount <= 0) return 0
+  return Math.min(100, Math.round((p.goal_raised / p.goal_amount) * 100))
+})
+const hasGoal = computed(() => !!profile.value && profile.value.goal_amount > 0)
+
+const displayName = computed(() => profile.value?.display_name ?? 'Donate Me')
+const initial = computed(() => {
+  const n = profile.value?.display_name
+  return n ? n[0] : '🎮'
+})
+
+onMounted(() => {
+  applyTheme()
+  // ไม่ระบุสตรีมเมอร์ → หน้าแรกคือทำเนียบสตรีมเมอร์ (Demo Mode ถอดออกแล้ว ตาม ADR-0002)
+  if (!targetUsername.value) {
+    router.replace('/')
+    return
+  }
+  void refreshData()
+})
+
+function timeAgo(ms: number): string {
+  const diff = Math.floor((Date.now() - ms) / 1000)
+  if (diff < 60) return `${diff} วินาทีที่แล้ว`
+  if (diff < 3600) return `${Math.floor(diff / 60)} นาทีที่แล้ว`
+  if (diff < 86400) return `${Math.floor(diff / 3600)} ชั่วโมงที่แล้ว`
+  return `${Math.floor(diff / 86400)} วันที่แล้ว`
+}
 
 async function submit() {
   error.value = ''
-  if (!name.value.trim()) return (error.value = 'กรุณากรอกชื่อก่อนนะ')
   if (!amount.value || amount.value < 1) return (error.value = 'กรุณากรอกจำนวนเงินอย่างน้อย 1 บาท')
+  if (!anonymous.value && !name.value.trim()) return (error.value = 'กรุณากรอกชื่อ หรือเลือกไม่แสดงชื่อ')
 
   submitting.value = true
   try {
+    const donorName = anonymous.value ? 'ไม่ระบุชื่อ' : name.value.trim()
     const res = await api.createDonation({
-      name: anonymous.value ? 'ไม่ระบุชื่อ' : name.value,
+      name: donorName,
       amount: amount.value,
       message: message.value,
       sound: sound.value,
-      username: targetUsername,
+      username: targetUsername.value,
     })
-    router.push({
-      path: `/pay/${res.id}`,
-      query: {
-        qr: res.qr_url,
-        pay: res.pay_url,
-        amount: String(amount.value),
-        sound: sound.value,
-        name: anonymous.value ? 'ไม่ระบุชื่อ' : name.value,
-      },
-    })
+    current.value = {
+      id: res.id,
+      qrUrl: res.qr_url,
+      payUrl: res.pay_url,
+      amount: amount.value,
+      sound: sound.value,
+      name: donorName,
+    }
+    start(res.id, { sound: sound.value, name: donorName, amount: amount.value, message: message.value })
+    stage.value = 'pay'
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'เกิดข้อผิดพลาด'
   } finally {
     submitting.value = false
   }
 }
+
+function backToForm() {
+  clearTimeout(resetTimer)
+  stop()
+  status.value = null
+  current.value = null
+  amount.value = null // เริ่มรอบใหม่ — คงชื่อไว้ แต่เคลียร์ยอด/ข้อความ
+  message.value = ''
+  stage.value = 'form'
+}
+
+onUnmounted(() => clearTimeout(resetTimer))
 </script>
 
 <template>
   <div class="page">
-    <!-- ===== Header ===== -->
     <SiteTopbar full />
 
-    <main class="wrap">
-      <!-- ===== Streamer hero ===== -->
-      <section class="hero">
-        <div class="hero-avatar"><span>{{ profile?.display_name?.[0] ?? '🎮' }}</span></div>
+    <main class="shell">
+      <!-- ===== Hero สตรีมเมอร์ ===== -->
+      <section v-if="!loadError" class="card hero">
+        <div class="avatar"><span>{{ initial }}</span></div>
         <div class="hero-info">
-          <div class="hero-name-row">
-            <h1>{{ profile?.display_name ?? 'Donate Me' }}</h1>
-            <span v-if="profile" class="partner-badge">PARTNER</span>
-            <span v-if="profile" class="follower-pill">🔴 ผู้ติดตามล่าสุด · 1,420 คน</span>
-          </div>
-          <p class="hero-bio">
-            {{ profile ? `ยินดีต้อนรับสู่หน้าโดเนตของ @${profile.username} — ทุกการสนับสนุนช่วยให้ไฟล์ต่อได้นานและสนุกยิ่งขึ้น 💜` : 'สนับสนุนสตรีมเมอร์คนโปรด ทุกการโดเนตช่วยให้ไฟล์ต่อได้ต่อเนื่องและสนุกยิ่งขึ้น 💜' }}
+          <h1>{{ displayName }}</h1>
+          <p class="bio">
+            <template v-if="profile">สนับสนุน @{{ profile.username }} — ทุกกำลังใจช่วยให้สตรีมต่อเนื่องและสนุกยิ่งขึ้น 💜</template>
           </p>
-          <div v-if="profile && profile.goal_amount > 0" class="goal-box">
+          <RouterLink class="back-link" to="/">← ทำเนียบสตรีมเมอร์ทั้งหมด</RouterLink>
+          <div v-if="hasGoal" class="goal-box">
             <div class="goal-head">
-              <span class="goal-title">🎙️ ปั้นทุนไมค์ใหม่ Shure SM7B</span>
-              <span class="goal-pct">{{ Math.min(100, Math.round((topDonators.reduce((s, t) => s + t.total, 0) / profile.goal_amount) * 100)) || 78 }}%</span>
+              <span class="goal-title">🎯 เป้าหมายการสนับสนุน</span>
+              <span class="goal-pct">{{ goalPct }}%</span>
             </div>
-            <div class="goal-bar"><div class="goal-fill" /></div>
+            <div
+              class="goal-bar"
+              role="progressbar"
+              :aria-valuenow="goalPct"
+              aria-valuemin="0"
+              aria-valuemax="100"
+            >
+              <div class="goal-fill" :style="{ width: goalPct + '%' }" />
+            </div>
             <div class="goal-foot">
-              <span>฿{{ topDonators.reduce((s, t) => s + t.total, 0).toLocaleString() }} สะสมแล้ว</span>
-              <span>เป้าหมาย ฿{{ profile.goal_amount.toLocaleString() }}</span>
+              <span>฿{{ (profile?.goal_raised ?? 0).toLocaleString() }} สะสมแล้ว</span>
+              <span>เป้าหมาย ฿{{ profile?.goal_amount.toLocaleString() }}</span>
             </div>
           </div>
         </div>
       </section>
 
-      <!-- ===== Form + QR ===== -->
-      <section class="grid-2">
-        <div class="card form-card">
+      <p v-if="loadError" class="load-error">{{ loadError }}</p>
+
+      <!-- ===== การ์ดโดเนต / QR / ผลลัพธ์ (in-place swap) ===== -->
+      <section class="card main-card">
+        <!-- ฟอร์ม -->
+        <template v-if="stage === 'form'">
           <div class="card-head">
-            <h2>❤️ ส่งกำลังใจสนับสนุน</h2>
-            <span class="badge badge-pink">Alert เด้งสด ๆ ทันที</span>
+            <h2>ส่งกำลังใจให้{{ profile ? displayName : 'สตรีมเมอร์' }}</h2>
+            <span class="badge badge-pink">PromptPay</span>
           </div>
 
-          <label>เลือกวงเงินสนับสนุน (บาท)</label>
+          <label class="lbl">จำนวนเงิน (บาท)</label>
           <div class="presets">
             <button
               v-for="p in presets"
               :key="p.v"
+              type="button"
               class="preset"
               :class="{ active: amount === p.v }"
               @click="amount = p.v"
             >
-              <span class="preset-label">{{ p.label }} <i>{{ p.emoji }}</i></span>
+              <span class="preset-label">{{ p.emoji }} {{ p.label }}</span>
               <b>฿{{ p.v }}</b>
             </button>
           </div>
           <div class="amount-input">
             <span class="thb">฿</span>
-            <input v-model.number="amount" type="number" min="1" max="100000" placeholder="100" />
-            <span class="suffix">THB</span>
+            <input
+              v-model.number="amount"
+              type="number"
+              min="1"
+              max="100000"
+              placeholder="ระบุจำนวนเอง"
+              aria-label="จำนวนเงินบาท"
+            />
           </div>
 
           <div class="name-row">
             <div class="name-field">
-              <label>ชื่อผู้ส่งกำลังใจ</label>
-              <input v-model="name" class="input" placeholder="NongSomZa_77" maxlength="50" />
+              <label class="lbl" for="donor-name">ชื่อของคุณ</label>
+              <input id="donor-name" v-model="name" class="input" placeholder="NongSomZa_77" maxlength="50" :disabled="anonymous" />
             </div>
             <label class="anon">
               <input v-model="anonymous" type="checkbox" />
@@ -192,81 +237,113 @@ async function submit() {
             </label>
           </div>
 
-          <div class="msg-head">
-            <label>ข้อความถึงสตรีมเมอร์ (Alert Popup)</label>
-            <span class="counter">{{ message.length }}/150</span>
-          </div>
-          <textarea v-model="message" class="input" rows="3" placeholder="สู้ ๆ นะพี่พีช วันนี้เล่น Valorant ด้วยวาเนนะ สู้สู้ปุย! 💗" maxlength="150" />
-
-          <div class="sound-box">
-            <div class="sound-head">
-              <span>🎵 เลือกเสียงประกอบด้วย AI</span>
-              <span class="badge badge-green">เลือกความยาว</span>
+          <details class="extra" open>
+            <summary>ข้อความ &amp; เสียงประกอบ <em>(ไม่บังคับ)</em></summary>
+            <div class="msg-head">
+              <label class="lbl" for="donor-msg">ข้อความถึงสตรีมเมอร์</label>
+              <span class="counter">{{ message.length }}/150</span>
             </div>
+            <textarea
+              id="donor-msg"
+              v-model="message"
+              class="input"
+              rows="3"
+              placeholder="สู้ ๆ นะพี่! 💗"
+              maxlength="150"
+            ></textarea>
+            <p class="tts-note">🔊 ข้อความนี้จะถูกอ่านออกเสียงบนสตรีมทุกครั้ง — ถ้าไม่กรอก ระบบใช้ข้อความเริ่มต้นให้</p>
+
+            <label class="lbl">เสียงเมื่อ Alert เด้ง</label>
             <div class="sound-chips">
               <button
                 v-for="s in sounds"
                 :key="s.value"
+                type="button"
                 class="sound-chip"
                 :class="{ active: sound === s.value }"
+                :aria-pressed="sound === s.value"
                 @click="sound = s.value"
               >
                 <i :style="{ background: s.color }" /> {{ s.label }}
               </button>
             </div>
-            <label class="tts-row">
-              <input v-model="sound" type="radio" :value="'tts'" :checked="sound === 'tts'" @click="sound = sound === 'tts' ? 'chime' : 'tts'" />
-              <span>🗣️ ให้ระบบอ่านข้อความไทยออกเสียง (TTS)</span>
-              <em class="tts-speed">เร่งความเร็ว 1.0x</em>
-            </label>
-          </div>
 
-          <div class="preview-strip">
-            <div class="preview-label">ตัวอย่างการแจ้งเตือนสด (Preview)</div>
-            <div class="preview-body">
-              <b>{{ anonymous ? 'ไม่ระบุชื่อ' : name || 'ชื่อของคุณ' }}</b> สนับสนุน <em>฿{{ (amount || 0).toLocaleString() }}</em> : "{{ message || 'ข้อความของคุณ' }}"
+            <div class="preview-strip">
+              <div class="preview-label">ตัวอย่าง Alert</div>
+              <div class="preview-body">
+                <b>{{ anonymous ? 'ไม่ระบุชื่อ' : name || 'ชื่อของคุณ' }}</b>
+                สนับสนุน <em>฿{{ (amount || 0).toLocaleString() }}</em>
+                <template v-if="message"> : "{{ message }}"</template>
+              </div>
             </div>
-          </div>
+          </details>
 
-          <p v-if="error" class="error">{{ error }}</p>
+          <p v-if="error" class="error" role="alert">{{ error }}</p>
 
           <button class="btn-primary cta" :disabled="submitting" @click="submit">
-            {{ submitting ? 'กำลังสร้าง QR...' : '⚡ สร้างคิวอาร์พร้อมเพย์ (PromptPay)' }}
+            {{ submitting ? 'กำลังสร้าง QR...' : `โดเนต ${amount ? '฿' + amount.toLocaleString() : ''}` }}
           </button>
-        </div>
+        </template>
 
-        <div class="side-col">
-          <div class="card qr-card">
-            <div class="card-head">
-              <span class="badge badge-green">● เชื่อมต่อระบบสำเร็จ</span>
-              <span class="qr-tag">Thai QR Payment</span>
-            </div>
-            <div class="qr-mini">
-              <div class="qr-mini-head">PromptPay พร้อมเพย์</div>
-              <div class="qr-mini-body">
-                <img src="/favicon.svg" alt="QR" />
-                <p>สแกนผ่านแอปธนาคาร<br />(ปรากฏหลังกดปุ่มด้านซ้าย)</p>
-              </div>
-              <div class="qr-mini-amount">฿{{ (amount || 0).toLocaleString() }}.00</div>
-            </div>
-            <div class="qr-note-box">
-              <b>⏳ กรุณาระบบใน 15 นาที</b>
-              <p>เมื่อระบบตรวจสอบรายการ สถานะจะเปลี่ยนเป็นสำเร็จ Alert จะเด้งในฉากสตรีมภายใน 1-3 วินาที</p>
-            </div>
-            <div class="secure-note">
-              🔒 ระบบนี้ปลอดภัยด้วยกระบวนการยืนยันระดับธนาคาร — เป็นเพียงระบบจำลอง (Mock) ยังไม่มีการตัดเงินจริง 100%
-            </div>
+        <!-- QR รอชำระเงิน -->
+        <template v-else-if="stage === 'pay' && current">
+          <div class="card-head">
+            <h2>สแกนเพื่อส่งกำลังใจ</h2>
+            <span class="badge badge-pink">PromptPay</span>
           </div>
-        </div>
+          <p class="pay-sub">เปิดแอปธนาคาร → สแกน → ยืนยันยอด ฿{{ current.amount.toLocaleString() }}</p>
+
+          <div class="qr-box">
+            <div class="qr-head">PromptPay พร้อมเพย์</div>
+            <div class="qr-body">
+              <img v-if="current.qrUrl" :src="current.qrUrl" alt="PromptPay QR" class="qr" />
+              <span class="qr-heart">❤️</span>
+            </div>
+            <div class="qr-amount">฿{{ current.amount.toLocaleString() }}.00</div>
+          </div>
+
+          <div class="expire-box">
+            <b>⏳ QR หมดอายุใน {{ countdown }} นาที</b>
+            <p>จ่ายสำเร็จเมื่อไหร่ หน้านี้จะเฉลิมฉลองให้ทันที และ Alert จะเด้งในฉากสตรีมภายในไม่กี่วินาที</p>
+          </div>
+
+          <div class="actions">
+            <a v-if="current.payUrl" :href="current.payUrl" target="_blank" class="btn-primary">
+              🧪 จำลองการชำระเงิน
+            </a>
+            <button class="btn-ghost" @click="backToForm">← ยกเลิก</button>
+          </div>
+          <p class="hint">ระบบจำลอง — ยังไม่มีการตัดเงินจริง</p>
+        </template>
+
+        <!-- สำเร็จ -->
+        <template v-else-if="stage === 'paid'">
+          <div class="result">
+            <div class="big">🎉</div>
+            <h2>โดเนตสำเร็จ!</h2>
+            <p class="pay-sub">ขอบคุณมาก ๆ ที่สนับสนุน ❤️ Alert เด้งบนฉากสตรีมแล้ว</p>
+            <div class="badge badge-green">จ่ายเงินสำเร็จ</div>
+            <p class="muted small reset-note">ระบบจะกลับไปหน้าโดเนตให้อัตโนมัติ</p>
+          </div>
+        </template>
+
+        <!-- ไม่สำเร็จ / หมดอายุ -->
+        <template v-else>
+          <div class="result">
+            <div class="big">⌛</div>
+            <h2>QR หมดอายุหรือรายการไม่สำเร็จ</h2>
+            <p class="pay-sub">ไม่มีการตัดเงิน — ลองสร้าง QR ใหม่ได้เลย</p>
+            <button class="btn-primary" @click="backToForm">← กลับไปโดเนตใหม่</button>
+          </div>
+        </template>
       </section>
 
-      <!-- ===== Leaderboard + Live feed ===== -->
-      <section v-if="topDonators.length || recent.length" class="grid-2">
+      <!-- ===== Social proof ===== -->
+      <section v-if="topDonators.length || recent.length" class="social">
         <div class="card">
           <div class="card-head">
-            <h2>🏆 ผู้สนับสนุนสูงสุดประจำเดือน</h2>
-            <span v-if="isDemoData" class="badge badge-gold">ตัวอย่าง</span>
-            <span v-else class="muted">Top 5</span>
+            <h2>🏆 ผู้สนับสนุนสูงสุดเดือนนี้</h2>
+            <span class="muted">Top 5</span>
           </div>
           <ol v-if="topDonators.length" class="board">
             <li v-for="(t, i) in topDonators" :key="t.donor_name">
@@ -283,10 +360,11 @@ async function submit() {
 
         <div class="card">
           <div class="card-head">
-            <h2>⚡ กำลังส่งกำลังใจ สด ๆ</h2>
-            <span class="badge badge-green">● ระบบทำงาน</span>
+            <h2>⚡ กำลังใจล่าสุด</h2>
+            <span class="badge badge-green">● สด</span>
           </div>
-          <div v-if="recent.length" class="feed">            <div v-for="(r, i) in recent" :key="i" class="feed-item">
+          <div v-if="recent.length" class="feed">
+            <div v-for="(r, i) in recent" :key="i" class="feed-item">
               <span class="feed-icon">{{ ['❤️', '⭐', '⚡', '💜', '🎉'][i] ?? '💗' }}</span>
               <div>
                 <b>{{ r.donor_name }}</b>
@@ -297,227 +375,376 @@ async function submit() {
             </div>
           </div>
           <p v-else class="muted empty">ยังไม่มีรายการ — เป็นคนแรกที่ส่งกำลังใจสิ!</p>
-          <a class="feed-more" href="/#/dashboard">ดูรายการทั้งหมดสนุกต่ออีก →</a>
         </div>
       </section>
 
       <footer class="footer">
-        <span><b>Donate Me</b> ❤️ แพลตฟอร์มสนับสนุนสตรีมเมอร์คนไทยโดยเฉพาะ</span>
-        <span class="muted">© 2026 Donate Me. ออกแบบด้วยรัรัก ให้ทุกคนกล้าส่งเสียง</span>
+        <span><b>Donate Me</b> ❤️ แพลตฟอร์มสนับสนุนสตรีมเมอร์คนไทย</span>
+        <span class="muted">© 2026 Donate Me</span>
       </footer>
     </main>
+
+    <!-- CTA ติดขอบล่างบนมือถือ -->
+    <div v-if="stage === 'form'" class="sticky-cta">
+      <button class="btn-primary" :disabled="submitting" @click="submit">
+        {{ submitting ? 'กำลังสร้าง QR...' : `โดเนต ${amount ? '฿' + amount.toLocaleString() : ''}` }}
+      </button>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.page { min-height: 100vh; background: var(--bg); }
-.wrap { max-width: 1180px; margin: 0 auto; padding: 24px 28px 40px; display: grid; gap: 22px; }
+.shell {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 26px 20px 48px;
+  display: grid;
+  gap: 18px;
+}
 
 /* hero */
 .hero {
-  display: flex; gap: 20px; align-items: flex-start;
-  background: var(--bg-card); border: 1px solid var(--border);
-  border-radius: var(--radius-xl); padding: 24px; box-shadow: var(--shadow-card);
+  display: flex;
+  gap: 18px;
+  align-items: flex-start;
+  padding: 24px;
 }
-.hero-avatar {
+.avatar {
   flex-shrink: 0;
-  width: 92px; height: 92px; border-radius: 22px; overflow: hidden;
+  width: 76px;
+  height: 76px;
+  border-radius: 22px;
+  overflow: hidden;
   background: linear-gradient(135deg, var(--primary), #a855f7);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 40px; font-family: var(--font-head); font-weight: 800; color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34px;
+  font-weight: 700;
+  color: #fff;
 }
-.hero-info { flex: 1; }
-.hero-name-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-h1 { font-size: 27px; font-weight: 800; }
-.partner-badge {
-  padding: 3px 10px; border-radius: 7px; font-size: 10.5px; font-weight: 800; letter-spacing: 0.5px;
-  background: var(--emerald-soft); color: var(--emerald);
+.hero-info { flex: 1; min-width: 0; }
+h1 { font-size: 25px; font-weight: 700; }
+.bio { margin-top: 6px; color: var(--text-dim); font-size: 14px; line-height: 1.65; }
+.back-link {
+  display: inline-block;
+  margin-top: 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-faint);
+  text-decoration: none;
 }
-.follower-pill {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 3px 11px; border-radius: 999px; font-size: 11.5px; color: var(--text-dim);
-  border: 1px solid var(--border);
-}
-.hero-bio { margin-top: 7px; color: var(--text-dim); font-size: 14px; line-height: 1.65; }
+.back-link:hover { color: var(--primary); }
 .goal-box {
-  margin-top: 16px; padding: 14px 16px; border-radius: var(--radius-lg);
-  background: var(--bg-card-2); border: 1px solid var(--border);
+  margin-top: 14px;
+  padding: 13px 15px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-card-2);
+  border: 1px solid var(--border);
 }
 .goal-head { display: flex; justify-content: space-between; font-size: 13.5px; font-weight: 700; }
 .goal-pct { color: var(--emerald); }
-.goal-bar { height: 8px; border-radius: 999px; background: var(--border); margin: 10px 0 8px; overflow: hidden; }
-.goal-fill { height: 100%; width: 78%; border-radius: 999px; background: linear-gradient(90deg, var(--primary), var(--emerald)); }
-.goal-foot { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-faint); }
-
-/* grid */
-.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-items: start; }
-.card {
-  background: var(--bg-card); border: 1px solid var(--border);
-  border-radius: var(--radius-xl); padding: 22px; box-shadow: var(--shadow-card);
+.goal-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--border);
+  margin: 10px 0 8px;
+  overflow: hidden;
 }
-.card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-.card-head h2 { font-size: 16.5px; font-weight: 700; }
+.goal-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--primary), var(--emerald));
+  transition: width 0.6s ease;
+}
+.goal-foot { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-faint); }
+.load-error {
+  text-align: center;
+  padding: 28px;
+  color: var(--text-dim);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+}
+
+/* การ์ดหลัก */
+.main-card { padding: 24px; }
+.card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.card-head h2 { font-size: 18px; font-weight: 700; }
 .muted { color: var(--text-faint); font-size: 12.5px; }
 .small { font-size: 11.5px; }
 
-/* form */
-label { display: block; font-size: 13px; font-weight: 600; color: var(--text-dim); margin: 14px 0 7px; }
+.lbl {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin: 14px 0 7px;
+}
 .presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px; }
 .preset {
-  padding: 11px 8px; border-radius: var(--radius-md); text-align: left;
-  border: 1px solid var(--border); background: var(--bg-input); color: var(--text);
-  cursor: pointer; transition: all 0.15s; font-family: var(--font-body);
+  padding: 11px 8px;
+  border-radius: var(--radius-md);
+  text-align: left;
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: var(--font);
 }
-.preset-label { display: block; font-size: 10.5px; color: var(--text-faint); margin-bottom: 3px; }
-.preset-label i { font-style: normal; }
-.preset b { font-family: var(--font-head); font-size: 16px; }
+.preset-label { display: block; font-size: 10.5px; color: var(--text-faint); margin-bottom: 3px; white-space: nowrap; }
+.preset b { font-size: 16px; font-weight: 700; }
 .preset:hover { border-color: var(--border-bright); }
 .preset.active {
   background: linear-gradient(135deg, #fb7185, var(--primary));
-  border-color: transparent; box-shadow: 0 6px 20px rgba(244, 63, 94, 0.4);
+  border-color: transparent;
+  box-shadow: 0 6px 20px rgba(244, 63, 94, 0.4);
 }
-.preset.active .preset-label { color: rgba(255, 255, 255, 0.8); }
+.preset.active .preset-label { color: rgba(255, 255, 255, 0.85); }
 .amount-input {
-  display: flex; align-items: center; gap: 8px;
-  margin-top: 10px; padding: 0 14px;
-  border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-input);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
 }
 .amount-input:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
 .amount-input .thb { color: var(--text-faint); }
 .amount-input input {
-  flex: 1; border: none; background: transparent; padding: 12px 0;
-  color: var(--text); font-size: 15px; outline: none;
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 12px 0;
+  color: var(--text);
+  font-size: 15px;
+  font-family: var(--font);
+  outline: none;
 }
-.amount-input .suffix { font-size: 12px; color: var(--text-faint); font-weight: 700; }
 .name-row { display: flex; align-items: flex-end; gap: 14px; }
 .name-field { flex: 1; }
 .anon {
-  display: flex; align-items: center; gap: 7px; margin-bottom: 13px; cursor: pointer;
-  font-size: 12.5px; color: var(--text-dim); white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 13px;
+  cursor: pointer;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
 }
 .anon input { width: auto; accent-color: var(--primary); }
+
+/* ส่วนยุบ: ข้อความ + เสียง */
+.extra {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-card-2);
+  border: 1px solid var(--border);
+}
+.extra summary {
+  cursor: pointer;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-dim);
+  list-style: none;
+}
+.extra summary::-webkit-details-marker { display: none; }
+.extra summary::before { content: '▸ '; color: var(--primary); }
+.extra[open] summary::before { content: '▾ '; }
+.extra summary em { font-style: normal; font-size: 11.5px; color: var(--text-faint); }
+.extra[open] summary { margin-bottom: 4px; }
 .msg-head { display: flex; justify-content: space-between; align-items: center; }
 .counter { font-size: 11px; color: var(--text-faint); }
+.tts-note { margin-top: 7px; font-size: 11.5px; color: var(--blue); line-height: 1.5; }
 textarea { resize: vertical; }
-
-.sound-box {
-  margin-top: 16px; padding: 14px; border-radius: var(--radius-lg);
-  background: var(--bg-card-2); border: 1px solid var(--border);
-}
-.sound-head { display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; }
-.sound-chips { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 11px; }
+.sound-chips { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .sound-chip {
-  display: flex; align-items: center; gap: 7px; padding: 9px 10px;
-  border-radius: var(--radius-sm); border: 1px solid var(--border);
-  background: var(--bg-input); color: var(--text-dim);
-  font-size: 12.5px; font-family: var(--font-body); cursor: pointer; transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--text-dim);
+  font-size: 12.5px;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: all 0.15s;
 }
-.sound-chip i { width: 8px; height: 8px; border-radius: 50%; }
+.sound-chip i { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .sound-chip:hover { border-color: var(--border-bright); color: var(--text); }
 .sound-chip.active { border-color: var(--primary); color: var(--text); background: var(--primary-soft); }
-.tts-row {
-  display: flex; align-items: center; gap: 9px; margin: 12px 0 0; cursor: pointer;
-  font-size: 12.5px; color: var(--text-dim); font-weight: 500;
-}
-.tts-row input { width: auto; accent-color: var(--primary); }
-.tts-speed { margin-left: auto; font-style: normal; font-size: 11px; color: var(--text-faint); }
-
 .preview-strip {
-  margin-top: 16px; padding: 13px 15px; border-radius: var(--radius-lg);
-  background: var(--bg-card-2); border: 1px solid var(--border);
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  border: 1px dashed var(--border-bright);
 }
-.preview-label { font-size: 11px; color: var(--text-faint); margin-bottom: 7px; }
+.preview-label { font-size: 11px; color: var(--text-faint); margin-bottom: 6px; }
 .preview-body { font-size: 13px; color: var(--text-dim); line-height: 1.6; }
 .preview-body b { color: var(--primary); }
 .preview-body em { font-style: normal; color: var(--gold); font-weight: 700; }
 .error { color: var(--primary); font-size: 13px; margin-top: 12px; text-align: center; }
-.cta { width: 100%; margin-top: 20px; padding: 16px; font-size: 16.5px; }
 
-/* QR side */
-.qr-tag { font-size: 12px; color: var(--text-faint); font-weight: 600; }
-.qr-mini {
-  border-radius: var(--radius-lg); overflow: hidden; border: 1px solid var(--border);
-  background: #fff; color: #0f172a; max-width: 320px; margin: 6px auto 0;
-}
-.qr-mini-head {
-  background: #1e3a8a; color: #fff; text-align: center;
-  font-size: 13px; font-weight: 700; padding: 9px;
-}
-.qr-mini-body { text-align: center; padding: 18px 20px 10px; }
-.qr-mini-body img { width: 110px; height: 110px; opacity: 0.35; }
-.qr-mini-body p { font-size: 11.5px; color: #64748b; margin-top: 8px; }
-.qr-mini-amount {
-  text-align: center; font-family: var(--font-head); font-size: 21px; font-weight: 800;
-  padding: 8px 0 16px;
-}
-.qr-note-box {
-  margin-top: 14px; padding: 13px 15px; border-radius: var(--radius-md);
-  background: var(--bg-card-2); border: 1px solid var(--border); text-align: center;
-}
-.qr-note-box b { font-size: 13px; color: var(--gold); }
-.qr-note-box p { font-size: 12px; color: var(--text-dim); margin-top: 5px; line-height: 1.6; }
-.secure-note {
-  margin-top: 12px; font-size: 11.5px; color: var(--text-faint); line-height: 1.6;
-  padding: 10px 12px; border-radius: var(--radius-sm); background: var(--emerald-soft);
-}
+.cta { width: 100%; margin-top: 18px; padding: 15px; font-size: 16.5px; }
 
-/* leaderboard + feed */
+/* QR */
+.pay-sub { color: var(--text-dim); font-size: 14px; line-height: 1.6; }
+.qr-box {
+  max-width: 300px;
+  margin: 18px auto 0;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: #fff;
+  color: #0f172a;
+  box-shadow: 0 8px 30px rgba(15, 23, 42, 0.25);
+  border: 1px solid #e2e8f0;
+}
+.qr-head { background: #1e3a8a; color: #fff; font-size: 13.5px; font-weight: 700; padding: 10px; text-align: center; }
+.qr-body { position: relative; padding: 18px; text-align: center; }
+.qr { width: 210px; height: 210px; image-rendering: pixelated; }
+.qr-heart {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 3px solid #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+.qr-amount { font-size: 22px; font-weight: 700; padding: 6px 0 18px; text-align: center; }
+.expire-box {
+  margin: 16px auto 0;
+  max-width: 380px;
+  padding: 13px 15px;
+  border-radius: var(--radius-md);
+  background: var(--gold-soft);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  text-align: center;
+}
+.expire-box b { font-size: 13px; color: var(--gold); }
+.expire-box p { font-size: 12px; color: var(--text-dim); margin-top: 5px; line-height: 1.6; }
+.actions { display: flex; gap: 10px; justify-content: center; margin-top: 18px; flex-wrap: wrap; }
+.actions .btn-primary { text-decoration: none; }
+.hint { margin-top: 12px; font-size: 11.5px; color: var(--text-faint); text-align: center; }
+
+/* ผลลัพธ์ */
+.result { text-align: center; padding: 32px 16px; }
+.big { font-size: 60px; margin-bottom: 8px; }
+.result h2 { font-size: 24px; margin-bottom: 6px; }
+.reset-note { margin-top: 14px; }
+
+/* social proof */
+.social { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+.social .card { padding: 22px; }
 .board { list-style: none; display: grid; gap: 8px; }
 .board li {
-  display: flex; align-items: center; gap: 12px; padding: 10px 12px;
-  border-radius: var(--radius-md); border: 1px solid var(--border); background: var(--bg-input);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-input);
 }
 .rank {
-  width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 12.5px; font-weight: 800; background: var(--bg-card-2); color: var(--text-dim);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12.5px;
+  font-weight: 700;
+  background: var(--bg-card-2);
+  color: var(--text-dim);
 }
 .rank-1 { background: var(--gold); color: #422006; }
 .rank-2 { background: #cbd5e1; color: #334155; }
 .rank-3 { background: #f59e0b; color: #431407; }
-.board-info { flex: 1; display: flex; flex-direction: column; }
+.board-info { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.board-info b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .board-info span { font-size: 11px; color: var(--text-faint); }
-.board-amount { font-family: var(--font-head); font-weight: 700; color: var(--gold); }
+.board-amount { font-weight: 700; color: var(--gold); }
 .empty { padding: 20px; text-align: center; }
-
 .feed { display: grid; gap: 10px; }
 .feed-item {
-  display: flex; gap: 11px; padding: 11px 13px;
-  border-radius: var(--radius-md); border: 1px solid var(--border); background: var(--bg-input);
+  display: flex;
+  gap: 11px;
+  padding: 11px 13px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-input);
 }
 .feed-icon {
-  width: 32px; height: 32px; border-radius: 10px; flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center; font-size: 15px;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
   background: var(--bg-card-2);
 }
 .feed-item b { font-size: 13px; }
-.feed-amt { font-style: normal; color: var(--emerald); font-weight: 700; font-size: 12.5px; }
+.feed-amt { font-style: normal; color: var(--emerald); font-weight: 700; font-size: 12.5px; margin-left: 6px; }
 .feed-item p { font-size: 12px; color: var(--text-dim); margin-top: 3px; line-height: 1.55; }
-.feed-more {
-  display: block; text-align: center; margin-top: 14px;
-  color: var(--primary); font-size: 13px; font-weight: 700; text-decoration: none;
-}
 
 .footer {
-  display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
-  padding-top: 18px; border-top: 1px solid var(--border); font-size: 12.5px; color: var(--text-dim);
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  font-size: 12.5px;
+  color: var(--text-dim);
 }
 
-@media (max-width: 900px) {
-  .grid-2 { grid-template-columns: 1fr; }
-  .hero { flex-direction: column; }
-}
+/* CTA sticky เฉพาะจอแคบ */
+.sticky-cta { display: none; }
+
 @media (max-width: 640px) {
-            .wrap { padding: 16px 14px 32px; }
-  .card { padding: 20px 16px; }
-  .hero { padding: 18px; }
-  .avatar { margin-top: -50px; width: 76px; height: 76px; font-size: 32px; }
-  .hero-avatar { width: 76px; height: 76px; font-size: 32px; }
-  h1 { font-size: 22px; }
+  .shell { padding: 18px 14px 96px; }
+  .hero { flex-direction: column; padding: 20px; }
+  .main-card { padding: 20px 16px; }
+  h1 { font-size: 21px; }
   .presets { grid-template-columns: 1fr 1fr; }
   .sound-chips { grid-template-columns: 1fr 1fr; }
-  .name-row { flex-direction: column; align-items: stretch; }
+  .name-row { flex-direction: column; align-items: stretch; gap: 8px; }
   .anon { margin-bottom: 0; justify-content: flex-end; }
-  .board li { flex-wrap: wrap; }
+  .social { grid-template-columns: 1fr; }
+  .cta { display: none; }
+  .sticky-cta {
+    display: block;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
+    background: color-mix(in srgb, var(--bg) 82%, transparent);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    border-top: 1px solid var(--border);
+  }
+  .sticky-cta .btn-primary { width: 100%; padding: 15px; font-size: 16px; }
 }
 </style>

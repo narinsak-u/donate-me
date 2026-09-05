@@ -91,8 +91,17 @@ export interface PublicProfile {
   username: string
   display_name: string
   goal_amount: number
+  goal_raised: number
   theme: string
   show_leaderboard: boolean
+}
+
+export interface StreamerSummary {
+  username: string
+  display_name: string
+  goal_amount: number
+  goal_raised: number
+  donor_count: number
 }
 
 export interface Settings {
@@ -137,8 +146,10 @@ export const api = {
   createDonation: (body: CreateDonationInput) =>
     request<DonationCreated>('/api/donate', { method: 'POST', body: JSON.stringify(body) }),
   getDonation: (id: string) => request<DonationStatusResponse>(`/api/donate/${id}`),
-  testAlert: () => request<{ ok: boolean }>('/api/test-alert', { method: 'POST' }),
+  testAlert: (amount = 100) =>
+    request<{ ok: boolean }>('/api/test-alert', { method: 'POST', body: JSON.stringify({ amount }) }),
   publicProfile: (username: string) => request<PublicProfile>(`/api/u/${username}`),
+  streamers: () => request<StreamerSummary[]>('/api/streamers'),
   topDonators: (username: string) => request<TopDonator[]>(`/api/u/${username}/top`),
   recentDonations: (username: string) => request<RecentDonation[]>(`/api/u/${username}/recent`),
   getSettings: () => request<Settings>('/api/me/settings'),

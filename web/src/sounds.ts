@@ -39,9 +39,43 @@ export function playSound(kind: string) {
   setTimeout(() => (sounds[kind] ?? sounds.chime)(), 60)
 }
 
+/** อุ่นเครื่อง TTS — เรียกตอนเริ่ม watch เพื่อให้ Chrome โหลดรายชื่อ voice ล่วงหน้า */
+export function primeTts() {
+  if (!('speechSynthesis' in window)) return
+  speechSynthesis.getVoices() // ยิงครั้งแรกเพื่อ trigger voiceschanged
+}
+
+/** รอรายชื่อ voice — Chrome จะคืน [] จนกว่า voiceschanged จะยิง จึงต้องรอแบบมี timeout */
+function loadVoices(): Promise<SpeechSynthesisVoice[]> {
+  const first = speechSynthesis.getVoices()
+  if (first.length > 0) return Promise.resolve(first)
+  return new Promise((resolve) => {
+    let settled = false
+    const done = (v: SpeechSynthesisVoice[]) => {
+      if (settled) return
+      settled = true
+      speechSynthesis.removeEventListener('voiceschanged', onChange)
+      clearInterval(poll)
+      resolve(v)
+    }
+    const check = () => {
+      const v = speechSynthesis.getVoices()
+      if (v.length > 0) done(v)
+    }
+    const onChange = () => check()
+    const poll = setInterval(check, 300)
+    speechSynthesis.addEventListener('voiceschanged', onChange)
+    setTimeout(() => done(speechSynthesis.getVoices()), 2500)
+  })
+}
+
 /** อ่านข้อความไทยด้วย TTS — ไม่มี voice ในเครื่อง → เล่นแตรวงแทน */
-export function speakThai(text: string, speed = 1.0) {
-  const voices = speechSynthesis.getVoices()
+export async function speakThai(text: string, speed = 1.0) {
+  if (!('speechSynthesis' in window)) {
+    sounds.fanfare()
+    return
+  }
+  const voices = await loadVoices()
   if (voices.length === 0) {
     console.warn('[Donate Me] ไม่พบ voice TTS ในเครื่อง — เล่นเสียงแตรวงแทน (ติดตั้งภาษาไทยใน OS เพื่อใช้ TTS)')
     sounds.fanfare()

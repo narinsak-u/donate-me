@@ -1,49 +1,52 @@
-/* ====== Donate Me — Stitch design system ======
-   Palettes: "Playful Stream Tipping" — rose #F43F5E · emerald #10B981 · slate #0F172A · neutral #64748B
-   Themes: dark (Minimal & Friendly) / light (Clean Light Mode) via html[data-theme] */
+/* ====== Donate Me — design system ======
+   ฟอนต์เดียว (Anuphan) · สีหลัก rose · aurora background ด้วย CSS ล้วน
+   ธีม: dark (default) / light ผ่าน html[data-theme] */
 
 :root {
   --primary: #f43f5e;
   --primary-hover: #e11d48;
-  --primary-soft: rgba(244, 63, 94, 0.14);
-  --emerald: #10b981;
-  --emerald-soft: rgba(16, 185, 129, 0.15);
+  --primary-soft: rgba(244, 63, 94, 0.16);
+  --emerald: #34d399;
+  --emerald-soft: rgba(52, 211, 153, 0.14);
   --gold: #fbbf24;
-  --blue: #3b82f6;
+  --gold-soft: rgba(251, 191, 36, 0.14);
+  --blue: #60a5fa;
 
-  /* dark (Minimal & Friendly) */
-  --bg: #0b1120;
-  --bg-card: #121a2d;
-  --bg-card-2: #0f1729;
-  --bg-input: #0d1526;
-  --border: rgba(148, 163, 184, 0.14);
-  --border-bright: rgba(148, 163, 184, 0.3);
-  --text: #e8eef9;
-  --text-dim: #94a3b8;
-  --text-faint: #64748b;
-  --shadow-card: 0 10px 40px rgba(0, 0, 0, 0.35);
-  --hover-row: rgba(148, 163, 184, 0.06);
+  /* dark */
+  --bg: #0a0e1a;
+  --bg-card: rgba(19, 26, 45, 0.66);
+  --bg-card-2: rgba(12, 17, 32, 0.55);
+  --bg-input: rgba(255, 255, 255, 0.045);
+  --border: rgba(148, 163, 184, 0.16);
+  --border-bright: rgba(148, 163, 184, 0.34);
+  --text: #eef2fb;
+  --text-dim: #a3aec6;
+  --text-faint: #7d88a5;
+  --shadow-card: 0 18px 50px rgba(2, 6, 18, 0.45);
+  --hover-row: rgba(148, 163, 184, 0.07);
+  --glass-blur: 16px;
 
-  --radius-xl: 20px;
+  --radius-xl: 22px;
   --radius-lg: 16px;
   --radius-md: 12px;
   --radius-sm: 9px;
-  --font-head: 'Plus Jakarta Sans', 'Kanit', 'Noto Sans Thai', sans-serif;
-  --font-body: 'Noto Sans Thai', 'Plus Jakarta Sans', sans-serif;
+  --font: 'Anuphan', 'Noto Sans Thai', -apple-system, sans-serif;
+  --font-head: var(--font);
+  --font-body: var(--font);
 }
 
 html[data-theme='light'] {
-  --bg: #f8fafc;
-  --bg-card: #ffffff;
-  --bg-card-2: #f1f5f9;
-  --bg-input: #ffffff;
-  --border: #e2e8f0;
-  --border-bright: #cbd5e1;
-  --text: #0f172a;
-  --text-dim: #64748b;
-  --text-faint: #94a3b8;
-  --shadow-card: 0 4px 24px rgba(15, 23, 42, 0.07);
-  --hover-row: #f8fafc;
+  --bg: #eef1f8;
+  --bg-card: rgba(255, 255, 255, 0.78);
+  --bg-card-2: rgba(244, 246, 251, 0.85);
+  --bg-input: rgba(255, 255, 255, 0.85);
+  --border: rgba(15, 23, 42, 0.1);
+  --border-bright: rgba(15, 23, 42, 0.22);
+  --text: #101828;
+  --text-dim: #4a5670;
+  --text-faint: #7c87a3;
+  --shadow-card: 0 12px 36px rgba(15, 23, 42, 0.08);
+  --hover-row: rgba(15, 23, 42, 0.04);
 }
 
 * {
@@ -52,19 +55,47 @@ html[data-theme='light'] {
   box-sizing: border-box;
 }
 
-html { -webkit-font-smoothing: antialiased; }
+html { -webkit-font-smoothing: antialiased; scroll-behavior: smooth; }
+
+/* ===== Aurora background — วาดด้วย radial-gradient ล้วน ไม่มี filter blur
+   (แพง CPU) เคลื่อนไหวช้า ๆ บน layer เดียว ::before ===== */
+body::before {
+  content: '';
+  position: fixed;
+  inset: -20%;
+  z-index: -1;
+  background:
+    radial-gradient(42% 38% at 18% 12%, rgba(244, 63, 94, 0.20), transparent 68%),
+    radial-gradient(38% 34% at 84% 22%, rgba(139, 92, 246, 0.16), transparent 66%),
+    radial-gradient(46% 40% at 66% 88%, rgba(16, 185, 129, 0.13), transparent 70%),
+    radial-gradient(30% 30% at 34% 74%, rgba(59, 130, 246, 0.12), transparent 70%);
+  animation: aurora-drift 36s ease-in-out infinite alternate;
+}
+html[data-theme='light'] body::before {
+  background:
+    radial-gradient(42% 38% at 18% 12%, rgba(244, 63, 94, 0.13), transparent 68%),
+    radial-gradient(38% 34% at 84% 22%, rgba(139, 92, 246, 0.11), transparent 66%),
+    radial-gradient(46% 40% at 66% 88%, rgba(16, 185, 129, 0.10), transparent 70%),
+    radial-gradient(30% 30% at 34% 74%, rgba(59, 130, 246, 0.09), transparent 70%);
+}
+@keyframes aurora-drift {
+  from { transform: translate3d(-2.5%, -1.5%, 0) scale(1); }
+  to { transform: translate3d(2.5%, 2%, 0) scale(1.08); }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  body::before { animation: none; }
+  *, *::before, *::after { transition-duration: 0.01ms !important; }
+}
 
 body {
-  font-family: var(--font-body);
+  font-family: var(--font);
   color: var(--text);
   background: var(--bg);
   transition: background 0.25s, color 0.25s;
 }
 
-h1, h2, h3, h4 {
-  font-family: var(--font-head);
-  letter-spacing: 0.1px;
-}
+h1, h2, h3, h4 { font-family: var(--font); letter-spacing: 0.1px; }
 
 ::selection { background: rgba(244, 63, 94, 0.35); }
 
@@ -72,7 +103,17 @@ h1, h2, h3, h4 {
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 8px; }
 
-/* shared form controls */
+/* ===== การ์ดแก้ว — พื้นครึ่งโปร่ง + blur ทับ aurora ===== */
+.card {
+  background: var(--bg-card);
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-card);
+}
+
+/* ===== shared form controls ===== */
 .input {
   width: 100%;
   padding: 12px 14px;
@@ -81,13 +122,20 @@ h1, h2, h3, h4 {
   background: var(--bg-input);
   color: var(--text);
   font-size: 14.5px;
-  font-family: var(--font-body);
+  font-family: var(--font);
   outline: none;
   transition: border 0.2s, box-shadow 0.2s;
 }
-.input:focus {
+.input:focus-visible {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+/* focus ที่มองเห็นได้เสมอสำหรับทุก interactive (a11y) */
+a:focus-visible, button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 6px;
 }
 
 .btn-primary {
@@ -102,7 +150,7 @@ h1, h2, h3, h4 {
   color: #fff;
   font-size: 15.5px;
   font-weight: 700;
-  font-family: var(--font-head);
+  font-family: var(--font);
   cursor: pointer;
   box-shadow: 0 8px 24px rgba(244, 63, 94, 0.35);
   transition: transform 0.15s, box-shadow 0.2s, filter 0.15s;
@@ -120,15 +168,15 @@ h1, h2, h3, h4 {
   padding: 11px 18px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: var(--bg-card);
+  background: var(--bg-card-2);
   color: var(--text);
   font-size: 14px;
   font-weight: 600;
-  font-family: var(--font-body);
+  font-family: var(--font);
   cursor: pointer;
   transition: background 0.15s, border 0.15s;
 }
-.btn-ghost:hover { background: var(--bg-card-2); border-color: var(--border-bright); }
+.btn-ghost:hover { border-color: var(--border-bright); }
 
 .badge {
   display: inline-flex;
@@ -139,18 +187,9 @@ h1, h2, h3, h4 {
   font-size: 12px;
   font-weight: 700;
 }
-.badge-green {
-  background: var(--emerald-soft);
-  color: var(--emerald);
-}
-.badge-pink {
-  background: var(--primary-soft);
-  color: var(--primary);
-}
-.badge-gold {
-  background: rgba(251, 191, 36, 0.15);
-  color: var(--gold);
-}
+.badge-green { background: var(--emerald-soft); color: var(--emerald); }
+.badge-pink { background: var(--primary-soft); color: var(--primary); }
+.badge-gold { background: var(--gold-soft); color: var(--gold); }
 
 /* theme toggle */
 .theme-toggle {

@@ -4,7 +4,7 @@
 //    แบบไม่ใส่ token = ฟังโดเนตของ streamer เริ่มต้น (ต้องเปิด ALLOW_PUBLIC_OVERLAY ใน .env)
 
 import { api, type DonationEvent, type Settings, type TopDonator } from '../api/auth'
-import { playSound, playTtsSequence } from '../sounds'
+import { playSound, speakThai } from '../sounds'
 import { burstConfetti } from '../confetti'
 
 const token = new URLSearchParams(location.search).get('token') ?? ''
@@ -173,7 +173,7 @@ function showAlert(d: DonationEvent) {
   elTier.style.color = tier.tierColor
   elTier.style.background = `${tier.tierColor}26`
   elSound.textContent = tier.soundLabel
-  elTts.style.display = d.sound === 'tts' ? 'inline-flex' : 'none'
+  elTts.style.display = settings.tts_enabled ? 'inline-flex' : 'none'
   // media alert: รูป/GIF จาก settings (https เท่านั้น ตรวจแล้วฝั่ง server)
   if (settings.alert_image_url) {
     elImg.src = settings.alert_image_url
@@ -191,19 +191,20 @@ function showAlert(d: DonationEvent) {
   playShine()
   burstConfetti(tier.confettiCount, undefined, { behind: true })
 
-  // เสียง: tts = กระดิ่งนำ → เสียงอ่านตาม (ใช้ speed/max_len จาก settings)
-  if (d.sound === 'tts' && settings.tts_enabled) {
-    const text = settings.alert_text
-      .replaceAll('{name}', d.donor_name)
-      .replaceAll('{amount}', d.amount.toLocaleString())
-    const full = `${text}${d.message ? `. ${d.message.slice(0, settings.tts_max_len)}` : ''}`
-    playTtsSequence(full, settings.tts_speed)
-  } else if (settings.alert_sound_url) {
-    // เสียงอัปโหลดของสตรีมเมอร์ — เล่นทับเสียงสังเคราะห์
+  // เสียง: เสียงที่เลือก/อัปโหลดนำ แล้วอ่านข้อความผู้บริจาคตามทุกครั้ง (ถ้าเปิด tts_enabled)
+  if (settings.alert_sound_url) {
     const audio = new Audio(settings.alert_sound_url)
     void audio.play().catch(() => playSound(d.sound))
   } else {
     playSound(d.sound)
+  }
+  if (settings.tts_enabled) {
+    const text = settings.alert_text
+      .replaceAll('{name}', d.donor_name)
+      .replaceAll('{amount}', d.amount.toLocaleString())
+    // ข้อความเริ่มต้นเมื่อผู้บริจาคไม่พิมพ์ — ตรงกับหน้าโดเนต (useDonationWatch)
+    const msg = (d.message || 'เป็นกำลังใจให้นะ').slice(0, settings.tts_max_len)
+    setTimeout(() => void speakThai(`${text}. ${msg}`, settings.tts_speed), 1400)
   }
 
   hideTimer = setTimeout(() => {

@@ -125,20 +125,14 @@ pub fn render_index(
     raw_html.replace("</title>", &format!("</title>\n{metas}"))
 }
 
-/// handler สำหรับ GET / — ให้บริการ SPA พร้อม OG tags ตาม ?u=
-pub async fn spa_index(
-    State(state): State<AppState>,
+/// งานร่วมของ spa_index / spa_index_path — อ่าน user จาก DB แล้วเรนเดอร์ index พร้อม OG
+async fn spa_with_username(
+    state: AppState,
     headers: HeaderMap,
-    raw: axum::extract::RawQuery,
+    username: Option<String>,
 ) -> impl IntoResponse {
     let html = std::fs::read_to_string("../web/dist/index.html").unwrap_or_else(|_| {
         "<!DOCTYPE html><html><head><title>Donate Me</title></head><body>index.html ไม่พบ — build web/ ก่อน (bun run build)</body></html>".into()
-    });
-
-    let query = raw.0.unwrap_or_default();
-    let username = query.split('&').find_map(|kv| {
-        let (k, v) = kv.split_once('=')?;
-        (k == "u").then(|| v.to_string())
     });
 
     // ดึง display_name จาก DB (username: a-z0-9_ เท่านั้น กัน injection ตอนค้น)
@@ -169,7 +163,7 @@ pub async fn spa_index(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("localhost:3000");
     let self_url = match &real_username {
-        Some(u) => format!("{scheme}://{host}/?u={u}"),
+        Some(u) => format!("{scheme}://{host}/u/{u}"),
         None => format!("{scheme}://{host}/"),
     };
 
@@ -177,6 +171,29 @@ pub async fn spa_index(
         [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
         render_index(&html, real_username.as_deref(), display_name.as_deref(), scheme, host, &self_url),
     )
+}
+
+/// handler สำหรับ GET / — ให้บริการ SPA พร้อม OG tags ตาม ?u= (ลิงก์แชร์รูปแบบเก่า)
+pub async fn spa_index(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    raw: axum::extract::RawQuery,
+) -> impl IntoResponse {
+    let query = raw.0.unwrap_or_default();
+    let username = query.split('&').find_map(|kv| {
+        let (k, v) = kv.split_once('=')?;
+        (k == "u").then(|| v.to_string())
+    });
+    spa_with_username(state, headers, username).await
+}
+
+/// handler สำหรับ GET /u/:username — หน้าโดเนตรูปแบบ path พร้อม OG tags
+pub async fn spa_index_path(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    axum::extract::Path(username): axum::extract::Path<String>,
+) -> impl IntoResponse {
+    spa_with_username(state, headers, Some(username)).await
 }
 
 pub fn og_png_response() -> impl IntoResponse {
