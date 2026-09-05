@@ -9,6 +9,21 @@ const router = useRouter()
 const profile = ref<PublicProfile | null>(null)
 const topDonators = ref<TopDonator[]>([])
 const recent = ref<RecentDonation[]>([])
+const isDemoData = ref(false)
+
+// ข้อมูลตัวอย่าง — ใช้แสดงแทนช่องว่างตอนที่ยังไม่มีโดเนตจริง
+const MOCK_TOP: TopDonator[] = [
+  { donor_name: 'ฟั่น HEARTROCKER', total: 15000, count: 42 },
+  { donor_name: 'MewSuppasit', total: 8500, count: 18 },
+  { donor_name: 'น้องเนยคัด', total: 5200, count: 12 },
+  { donor_name: 'Bank_Overload', total: 3400, count: 8 },
+  { donor_name: 'Cyber_Kaitom', total: 2990, count: 6 },
+]
+const MOCK_RECENT: RecentDonation[] = [
+  { donor_name: 'Gunz_lnwZa', amount: 300, message: 'พี่แนนสตรีมมิ่งเพราะสุดในจักรวาลเลยครับ', paid_at: Date.now() - 60_000 },
+  { donor_name: 'คุณปริสนธ์สปอนเซอร์', amount: 100, message: 'เว็บทำดีมากครับ ขอแสดงเป็นกำลังใจ 💗', paid_at: Date.now() - 240_000 },
+  { donor_name: 'Pluem_Ch', amount: 50, message: 'กราฟวิ่งไหว อุ่นใจมาก 5555', paid_at: Date.now() - 720_000 },
+]
 const name = ref('')
 const amount = ref<number | null>(null)
 const message = ref('')
@@ -35,13 +50,25 @@ onMounted(() => {
       .then(async (p) => {
         profile.value = p
         if (p.show_leaderboard) {
-          ;[topDonators.value, recent.value] = await Promise.all([
+          const [top, rec] = await Promise.all([
             api.topDonators(targetUsername).then((r) => r.slice(0, 5)),
             api.recentDonations(targetUsername),
           ])
+          isDemoData.value = top.length === 0 && rec.length === 0
+          topDonators.value = top.length ? top : MOCK_TOP
+          recent.value = rec.length ? rec : MOCK_RECENT
+        } else {
+          // ปิด leaderboard → ใช้ mock ใน live feed อย่างเดียว
+          isDemoData.value = true
+          recent.value = MOCK_RECENT
         }
       })
       .catch(() => (error.value = 'ไม่พบสตรีมเมอร์นี้ — ตรวจลิงก์อีกครั้ง'))
+  } else {
+    // ไม่ได้ระบุ ?u= → ยังไม่มีข้อมูลให้ดึง ใช้ชุดตัวอย่างไปก่อน
+    isDemoData.value = true
+    topDonators.value = MOCK_TOP
+    recent.value = MOCK_RECENT
   }
 })
 
@@ -243,11 +270,12 @@ async function submit() {
       </section>
 
       <!-- ===== Leaderboard + Live feed ===== -->
-      <section class="grid-2">
+      <section v-if="topDonators.length || recent.length" class="grid-2">
         <div class="card">
           <div class="card-head">
             <h2>🏆 ผู้สนับสนุนสูงสุดประจำเดือน</h2>
-            <span class="muted">Top 5</span>
+            <span v-if="isDemoData" class="badge badge-gold">ตัวอย่าง</span>
+            <span v-else class="muted">Top 5</span>
           </div>
           <ol v-if="topDonators.length" class="board">
             <li v-for="(t, i) in topDonators" :key="t.donor_name">
@@ -267,8 +295,7 @@ async function submit() {
             <h2>⚡ กำลังส่งกำลังใจ สด ๆ</h2>
             <span class="badge badge-green">● ระบบทำงาน</span>
           </div>
-          <div v-if="recent.length" class="feed">
-            <div v-for="(r, i) in recent" :key="i" class="feed-item">
+          <div v-if="recent.length" class="feed">            <div v-for="(r, i) in recent" :key="i" class="feed-item">
               <span class="feed-icon">{{ ['❤️', '⭐', '⚡', '💜', '🎉'][i] ?? '💗' }}</span>
               <div>
                 <b>{{ r.donor_name }}</b>
