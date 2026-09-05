@@ -137,6 +137,27 @@ function ctx(): AudioContext {
   return audioCtx
 }
 
+// browser บล็อก autoplay: ถ้า AudioContext ถูก suspend ให้โชว์ปุ่มกดเปิดเสียง
+function showUnmuteIfNeeded() {
+  if (ctx().state !== 'suspended' || document.getElementById('unmute-chip')) return
+  const chip = document.createElement('button')
+  chip.id = 'unmute-chip'
+  chip.textContent = '🔇 กดเพื่อเปิดเสียงแจ้งเตือน'
+  chip.style.cssText =
+    'position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:999;' +
+    'padding:10px 20px;border:none;border-radius:999px;cursor:pointer;font-size:14px;font-weight:700;' +
+    "background:#f43f5e;color:#fff;font-family:'Noto Sans Thai',sans-serif;box-shadow:0 6px 20px rgba(244,63,94,.5)"
+  chip.onclick = () => {
+    void ctx().resume()
+    chip.remove()
+  }
+  document.body.appendChild(chip)
+  // พยายาม resume เองเมื่อผู้ใช้คลิกที่ใดก็ได้ในหน้า
+  document.addEventListener('click', () => void ctx().resume(), { once: true })
+}
+showUnmuteIfNeeded()
+ctx().addEventListener?.('statechange', showUnmuteIfNeeded)
+
 function tone(freq: number, start: number, dur: number, type: OscillatorType = 'sine', vol = 0.3) {
   const c = ctx()
   const o = c.createOscillator()
@@ -171,6 +192,16 @@ function speak(d: DonationEvent) {
     .replaceAll('{amount}', d.amount.toLocaleString())
   const u = new SpeechSynthesisUtterance(`${text}${d.message ? `. ${d.message}` : ''}`)
   u.lang = 'th-TH'
+  // เครื่องไม่มี voice เลย (เช่น Windows ไม่ได้ติดตั้งภาษาไทย) → TTS เงียบ
+  // fallback: เล่นเสียงแตรวงแทน พร้อมข้อความแจ้งใน console ของ OBS
+  const voices = speechSynthesis.getVoices()
+  if (voices.length === 0) {
+    console.warn('[Donate Me] ไม่พบ voice TTS ในเครื่อง — เล่นเสียงแตรวงแทน (ติดตั้งภาษาไทยใน OS เพื่อใช้ TTS)')
+    sounds.fanfare()
+    return
+  }
+  const thVoice = voices.find((v) => v.lang.startsWith('th'))
+  if (thVoice) u.voice = thVoice
   speechSynthesis.cancel()
   speechSynthesis.speak(u)
 }
