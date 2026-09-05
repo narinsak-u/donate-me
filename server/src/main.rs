@@ -1,6 +1,7 @@
 mod auth;
 mod dashboard;
 mod mock_pay;
+mod og;
 mod payment;
 mod rate_limit;
 mod sanitize;
@@ -428,6 +429,8 @@ async fn main() {
     // mock routes เฉพาะตอนยังใช้ MockProvider — ตอนใช้ Omise จริงปิดทิ้ง (กันยิง mock webhook)
     let app = Router::new()
         .route("/healthz", get(healthz))
+        .route("/", get(og::spa_index))
+        .route("/og/og-card.png", get(|| async { og::og_png_response() }))
         .route(
             "/api/donate",
             post(create_donation).layer(axum::middleware::from_fn_with_state(
