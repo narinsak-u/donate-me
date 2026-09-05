@@ -37,8 +37,10 @@ async function submit() {
 
 <template>
   <div class="page">
+    <div class="aurora" />
+    <div class="stars" />
     <div class="card">
-      <div class="avatar">🎮</div>
+      <div class="avatar">💜</div>
       <h1>{{ mode === 'login' ? 'เข้าสู่ระบบ' : 'สมัครสมาชิก' }}</h1>
       <p class="subtitle">ระบบโดเนตสำหรับสตรีมเมอร์</p>
 
@@ -74,87 +76,101 @@ async function submit() {
 <style scoped>
 .page {
   min-height: 100vh;
-  background: linear-gradient(135deg, #1a1040 0%, #2d1b69 50%, #0f3460 100%);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 20px;
+  position: relative;
+  background: linear-gradient(160deg, var(--bg-0) 0%, var(--bg-1) 45%, #0f3460 100%);
 }
 .card {
+  position: relative;
+  z-index: 1;
   width: 100%;
   max-width: 420px;
-  background: rgba(255, 255, 255, 0.07);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 20px;
-  padding: 36px 32px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
-  color: #fff;
+  background: var(--glass);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 38px 34px;
+  box-shadow: var(--shadow-card);
 }
 .avatar {
   width: 72px;
   height: 72px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #ff6ec7, #7873f5);
+  border-radius: 24px;
+  background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 34px;
-  margin: 0 auto 16px;
+  font-size: 32px;
+  margin: -62px auto 16px;
+  border: 4px solid rgba(255, 255, 255, 0.25);
+  box-shadow: var(--glow-pink);
 }
 h1 {
   text-align: center;
-  font-size: 24px;
-  margin-bottom: 4px;
+  font-size: 26px;
 }
 .subtitle {
   text-align: center;
-  opacity: 0.7;
-  margin-bottom: 24px;
+  color: var(--text-dim);
+  margin: 6px 0 24px;
   font-size: 14px;
 }
 label {
   display: block;
   font-size: 13px;
-  opacity: 0.8;
+  font-weight: 600;
+  color: var(--text-dim);
   margin: 14px 0 6px;
 }
 input {
   width: 100%;
-  padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(0, 0, 0, 0.25);
-  color: #fff;
+  padding: 13px 15px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--text);
   font-size: 15px;
+  font-family: var(--font-body);
   outline: none;
+  transition: border 0.2s, box-shadow 0.2s;
 }
 input:focus {
-  border-color: #ff6ec7;
+  border-color: var(--accent-1);
+  box-shadow: 0 0 0 3px rgba(255, 110, 199, 0.18);
 }
 .error {
-  color: #fda4af;
+  color: var(--danger);
   font-size: 13px;
   margin-top: 12px;
   white-space: pre-wrap;
 }
 .submit-btn {
   width: 100%;
-  margin-top: 22px;
-  padding: 14px;
+  margin-top: 24px;
+  padding: 15px;
   border: none;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   cursor: pointer;
-  background: linear-gradient(135deg, #ff6ec7, #7873f5);
+  background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
   color: #fff;
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 700;
+  font-family: var(--font-head);
+  box-shadow: 0 8px 26px rgba(255, 110, 199, 0.3);
+  transition: transform 0.15s, box-shadow 0.2s;
+}
+.submit-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 36px rgba(255, 110, 199, 0.45);
 }
 .switch {
   text-align: center;
-  margin-top: 18px;
+  margin-top: 20px;
   font-size: 14px;
-  opacity: 0.8;
+  color: var(--text-dim);
 }
 .switch a {
   color: #a5b4fc;

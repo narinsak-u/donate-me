@@ -10,19 +10,26 @@ const token = params.get('token') || getToken() || ''
 const root = document.getElementById('app')!
 root.innerHTML = `
   <div id="alert" style="
-    position:fixed; top:40%; left:50%; transform:translate(-50%,-50%) scale(0);
-    padding:28px 48px; border-radius:20px; text-align:center;
+    position:fixed; top:40%; left:50%; transform:translate(-50%,-50%) scale(0) rotate(-3deg);
+    padding:30px 52px; border-radius:26px; text-align:center;
     box-shadow:0 0 60px rgba(255,110,199,.6), 0 20px 40px rgba(0,0,0,.5);
     border:3px solid rgba(255,255,255,.5); opacity:0;
-    transition:transform .5s cubic-bezier(.2,1.6,.4,1), opacity .3s;">
-    <div id="a-icon" style="font-size:52px; animation:bounce 1s infinite alternate;">❤️</div>
-    <img id="a-img" alt="" style="display:none; max-width:260px; max-height:160px; border-radius:12px; margin-top:10px;">
-    <div id="a-name" style="font-size:26px; font-weight:800; color:#fff; margin-top:8px; text-shadow:0 2px 8px rgba(0,0,0,.4);"></div>
-    <div id="a-amount" style="font-size:40px; font-weight:900; color:#ffe066; text-shadow:0 2px 10px rgba(0,0,0,.5); margin-top:2px;"></div>
-    <div id="a-msg" style="font-size:17px; color:#fff; margin-top:10px; max-width:420px; text-shadow:0 1px 4px rgba(0,0,0,.4);"></div>
+    transition:transform .55s cubic-bezier(.2,1.6,.4,1), opacity .3s;
+    font-family:'Noto Sans Thai','Segoe UI',sans-serif;">
+    <div style="position:absolute; inset:0; border-radius:23px; overflow:hidden; pointer-events:none;">
+      <div id="a-shine" style="position:absolute; top:-60%; left:-80%; width:50%; height:220%;
+        background:linear-gradient(100deg, transparent, rgba(255,255,255,.35), transparent);
+        transform:rotate(15deg);"></div>
+    </div>
+    <div id="a-icon" style="font-size:54px; animation:bounce 1s infinite alternate; position:relative;">❤️</div>
+    <img id="a-img" alt="" style="display:none; max-width:260px; max-height:160px; border-radius:12px; margin-top:10px; position:relative;">
+    <div id="a-name" style="font-size:27px; font-weight:700; color:#fff; margin-top:8px; text-shadow:0 2px 8px rgba(0,0,0,.4); position:relative;"></div>
+    <div id="a-amount" style="font-size:44px; font-weight:800; color:#ffe066; text-shadow:0 2px 10px rgba(0,0,0,.5); margin-top:2px; font-family:'Kanit',sans-serif; position:relative;"></div>
+    <div id="a-msg" style="font-size:17px; color:#fff; margin-top:10px; max-width:430px; text-shadow:0 1px 4px rgba(0,0,0,.4); position:relative;"></div>
   </div>
   <style>
     @keyframes bounce { from { transform:translateY(0); } to { transform:translateY(-10px); } }
+    @keyframes shine { from { left:-80%; } to { left:160%; } }
     .confetti { position:fixed; font-size:22px; pointer-events:none; animation:fall 3s linear forwards; }
     @keyframes fall { to { transform:translateY(105vh) rotate(720deg); opacity:0; } }
   </style>
@@ -36,6 +43,13 @@ const elImg = root.querySelector<HTMLImageElement>('#a-img')!
 const elName = root.querySelector<HTMLElement>('#a-name')!
 const elAmount = root.querySelector<HTMLElement>('#a-amount')!
 const elMsg = root.querySelector<HTMLElement>('#a-msg')!
+const elShine = root.querySelector<HTMLElement>('#a-shine')!
+
+function playShine() {
+  elShine.style.animation = 'none'
+  void elShine.offsetWidth // restart animation
+  elShine.style.animation = 'shine 1.1s ease-out .35s'
+}
 
 const THEMES: Record<string, { bg: string; glow: string; icon: string }> = {
   pink: { bg: 'linear-gradient(135deg, rgba(255,110,199,.95), rgba(120,115,245,.95))', glow: 'rgba(255,110,199,.6)', icon: '❤️' },
@@ -146,9 +160,10 @@ function showAlert(d: DonationEvent) {
   if (tier.emoji) elIcon.textContent = tier.emoji
   elIcon.style.animationDuration = tier.scale >= 1.35 ? '0.4s' : '1s'
   requestAnimationFrame(() => {
-    alertBox.style.transform = `translate(-50%,-50%) scale(${tier.scale})`
+    alertBox.style.transform = `translate(-50%,-50%) scale(${tier.scale}) rotate(0deg)`
     alertBox.style.opacity = '1'
   })
+  playShine()
   confetti(tier.confettiCount)
 
   if (tier.extra) {
@@ -166,7 +181,7 @@ function showAlert(d: DonationEvent) {
   }
 
   hideTimer = setTimeout(() => {
-    alertBox.style.transform = 'translate(-50%,-50%) scale(0)'
+    alertBox.style.transform = 'translate(-50%,-50%) scale(0) rotate(-3deg)'
     alertBox.style.opacity = '0'
   }, settings.alert_duration_sec * 1000)
 }

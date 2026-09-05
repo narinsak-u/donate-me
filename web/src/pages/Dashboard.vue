@@ -220,67 +220,111 @@ function fmtDate(ms: number | null): string {
 <style scoped>
 .page {
   min-height: 100vh;
-  background: linear-gradient(135deg, #1a1040 0%, #2d1b69 50%, #0f3460 100%);
-  color: #fff;
+  background: linear-gradient(160deg, var(--bg-0) 0%, var(--bg-1) 45%, #0f3460 100%);
+  color: var(--text);
 }
 header {
   display: flex;
   align-items: center;
   gap: 16px;
   padding: 14px 28px;
-  background: rgba(0, 0, 0, 0.25);
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
 }
-.logo { font-weight: 800; font-size: 18px; }
-.who { opacity: 0.75; flex: 1; }
+.logo {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 19px;
+  background: linear-gradient(90deg, var(--accent-1), var(--accent-3));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.who { color: var(--text-dim); flex: 1; }
 nav {
   display: flex;
   gap: 8px;
-  padding: 12px 28px 0;
+  padding: 14px 28px 0;
 }
 nav button {
-  padding: 10px 18px;
-  border: none;
-  border-radius: 10px 10px 0 0;
-  background: rgba(0, 0, 0, 0.2);
-  color: #fff;
+  padding: 11px 20px;
+  border: 1px solid transparent;
+  border-radius: 12px 12px 0 0;
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text-dim);
   cursor: pointer;
   font-weight: 600;
+  font-size: 14px;
+  font-family: var(--font-body);
+  transition: all 0.15s;
+}
+nav button:hover {
+  color: var(--text);
 }
 nav button.active {
-  background: rgba(255, 255, 255, 0.1);
-  border-bottom: 3px solid #ff6ec7;
+  background: var(--glass-strong);
+  border-color: var(--border);
+  border-bottom-color: transparent;
+  color: var(--text);
+  border-bottom: 3px solid var(--accent-1);
 }
 main {
   max-width: 780px;
   margin: 0 auto;
-  padding: 20px;
+  padding: 22px 20px 48px;
   display: grid;
-  gap: 16px;
+  gap: 18px;
 }
 .card {
-  background: rgba(255, 255, 255, 0.07);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 16px;
-  padding: 22px;
+  background: var(--glass);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  box-shadow: var(--shadow-card);
 }
-h2 { font-size: 16px; margin-bottom: 12px; }
+h2 {
+  font-size: 16px;
+  margin-bottom: 14px;
+  color: var(--text);
+}
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 12px;
 }
-.stat { text-align: center; padding: 18px 8px; }
-.stat .num { display: block; font-size: 22px; font-weight: 800; color: #ffe066; }
-.stat span:last-child { font-size: 12px; opacity: 0.7; }
-label { display: block; font-size: 13px; opacity: 0.8; margin: 12px 0 6px; }
+.stat { text-align: center; padding: 20px 8px 16px; }
+.stat .num {
+  display: block;
+  font-family: var(--font-head);
+  font-size: 23px;
+  font-weight: 700;
+  color: var(--gold);
+  font-variant-numeric: tabular-nums;
+}
+.stat span:last-child { font-size: 12px; color: var(--text-dim); }
+label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin: 12px 0 6px;
+}
 input, select {
   width: 100%;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(0, 0, 0, 0.25);
-  color: #fff;
+  padding: 11px 13px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--text);
   font-size: 14px;
+  font-family: var(--font-body);
+  outline: none;
+}
+input:focus, select:focus {
+  border-color: var(--accent-1);
+  box-shadow: 0 0 0 3px rgba(255, 110, 199, 0.15);
 }
 input[type='checkbox'] { width: auto; }
 .check { display: flex; align-items: center; gap: 8px; }
@@ -288,34 +332,43 @@ input[type='checkbox'] { width: auto; }
 .link-row code {
   flex: 1;
   background: rgba(0, 0, 0, 0.35);
-  padding: 10px 12px;
-  border-radius: 10px;
+  padding: 11px 13px;
+  border-radius: var(--radius-sm);
   font-size: 13px;
   word-break: break-all;
+  border: 1px solid var(--border);
 }
 .row { display: flex; gap: 10px; margin-top: 16px; align-items: center; flex-wrap: wrap; }
-.actions { margin-top: 20px; }
+.actions { margin-top: 22px; }
 button {
-  padding: 10px 16px;
-  border-radius: 10px;
+  padding: 10px 17px;
+  border-radius: var(--radius-sm);
   border: none;
   cursor: pointer;
   font-weight: 600;
   font-size: 14px;
+  font-family: var(--font-body);
+  transition: transform 0.15s, background 0.15s;
 }
-button.primary { background: linear-gradient(135deg, #ff6ec7, #7873f5); color: #fff; }
-button.ghost { background: rgba(255, 255, 255, 0.12); color: #fff; }
+button.primary {
+  background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+  color: #fff;
+  box-shadow: 0 6px 20px rgba(255, 110, 199, 0.3);
+}
+button.primary:hover { transform: translateY(-1px); }
+button.ghost { background: var(--glass-strong); color: var(--text); border: 1px solid var(--border); }
+button.ghost:hover { background: rgba(255, 255, 255, 0.18); }
 button.ghost:disabled { opacity: 0.5; }
-button.mini { padding: 5px 10px; font-size: 12px; background: rgba(255, 255, 255, 0.12); color: #fff; }
+button.mini { padding: 5px 11px; font-size: 12px; background: var(--glass-strong); color: var(--text); border: 1px solid var(--border); }
 .ghost-link { color: #a5b4fc; font-size: 14px; }
-.hint { font-size: 12px; opacity: 0.55; margin-top: 10px; }
+.hint { font-size: 12px; color: var(--text-faint); margin-top: 10px; }
 .toolbar { display: flex; gap: 10px; margin-bottom: 14px; align-items: center; }
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th { text-align: left; opacity: 0.6; padding: 8px 6px; border-bottom: 1px solid rgba(255,255,255,.15); }
-td { padding: 8px 6px; border-bottom: 1px solid rgba(255,255,255,.06); }
-td.amount { color: #ffe066; font-weight: 700; }
-td.hidden { opacity: 0.4; font-style: italic; }
-.muted { opacity: 0.55; }
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+th { text-align: left; color: var(--text-faint); font-weight: 600; padding: 9px 6px; border-bottom: 1px solid var(--border); }
+td { padding: 9px 6px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
+td.amount { color: var(--gold); font-weight: 700; font-variant-numeric: tabular-nums; }
+td.hidden { color: var(--text-faint); font-style: italic; }
+.muted { color: var(--text-dim); }
 .center { text-align: center; }
 .pager { display: flex; gap: 12px; align-items: center; justify-content: center; margin-top: 12px; }
 </style>
