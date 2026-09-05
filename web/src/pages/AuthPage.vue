@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { authApi } from '../api/auth'
+import { applyTheme } from '../theme'
 
 const router = useRouter()
 const mode = ref<'login' | 'register'>('login')
@@ -12,9 +13,7 @@ const displayName = ref('')
 const error = ref('')
 const busy = ref(false)
 
-onMounted(() => {
-  document.documentElement.setAttribute('data-theme', localStorage.getItem('donateme_theme') ?? 'dark')
-})
+onMounted(() => applyTheme())
 
 async function submit() {
   error.value = ''

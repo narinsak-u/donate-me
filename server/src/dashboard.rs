@@ -127,6 +127,7 @@ pub struct DonationItem {
     pub message: String,
     pub sound: String,
     pub hidden: bool,
+    pub pinned: bool,
     pub created_at: i64,
     pub paid_at: Option<i64>,
 }
@@ -166,10 +167,10 @@ pub async fn history(
     .get("c");
 
     let rows = sqlx::query(
-        "SELECT id, donor_name, amount, message, sound, hidden, created_at, paid_at FROM donations
+        "SELECT id, donor_name, amount, message, sound, hidden, pinned, created_at, paid_at FROM donations
          WHERE user_id=? AND status='paid' AND created_at >= ? AND created_at <= ?
          AND (donor_name LIKE ? OR message LIKE ?)
-         ORDER BY COALESCE(paid_at, created_at) DESC LIMIT ? OFFSET ?",
+         ORDER BY pinned DESC, COALESCE(paid_at, created_at) DESC LIMIT ? OFFSET ?",
     )
     .bind(&user.user_id)
     .bind(from)
@@ -192,6 +193,7 @@ pub async fn history(
                 message: r.get("message"),
                 sound: r.get("sound"),
                 hidden: r.get::<i64, _>("hidden") != 0,
+                pinned: r.get::<i64, _>("pinned") != 0,
                 created_at: r.get("created_at"),
                 paid_at: r.get("paid_at"),
             })
@@ -201,10 +203,13 @@ pub async fn history(
     }))
 }
 
-/// PATCH /api/me/donations/:id — ซ่อน/เปิดข้อความ (ownership ตรวจใน WHERE)
+/// PATCH /api/me/donations/:id — ซ่อน/เปิด และปักหมุดข้อความ (ownership ตรวจใน WHERE)
 #[derive(Deserialize)]
 pub struct PatchDonation {
-    pub hidden: bool,
+    #[serde(default)]
+    pub hidden: Option<bool>,
+    #[serde(default)]
+    pub pinned: Option<bool>,
 }
 
 pub async fn patch_donation(
@@ -213,28 +218,54 @@ pub async fn patch_donation(
     Path(id): Path<String>,
     Json(body): Json<PatchDonation>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let res = sqlx::query("UPDATE donations SET hidden = ? WHERE id = ? AND user_id = ?")
-        .bind(body.hidden as i64)
-        .bind(&id)
-        .bind(&user.user_id)
-        .execute(&state.db)
-        .await
-        .map_err(db_err)?;
+    let hidden = body.hidden;
+    let pinned = body.pinned;
+    if hidden.is_none() && pinned.is_none() {
+        return Err((StatusCode::BAD_REQUEST, "ต้องระบุ hidden หรือ pinned".into()));
+    }
+    let res = sqlx::query(
+        "UPDATE donations SET
+           hidden = COALESCE(?, hidden),
+           pinned = COALESCE(?, pinned)
+         WHERE id = ? AND user_id = ?",
+    )
+    .bind(hidden.map(|v| v as i64))
+    .bind(pinned.map(|v| v as i64))
+    .bind(&id)
+    .bind(&user.user_id)
+    .execute(&state.db)
+    .await
+    .map_err(db_err)?;
     if res.rows_affected() == 0 {
         return Err((StatusCode::NOT_FOUND, "ไม่พบรายการ".into()));
     }
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
-/// GET /api/me/donations.csv — export ทั้งหมด (ฝั่ง Rust ทำ CSV)
+/// GET /api/me/donations.csv — export พร้อมตัวกรองวันที่เดียวกับ history
+#[derive(Deserialize)]
+pub struct CsvQuery {
+    #[serde(default)]
+    pub from: Option<i64>,
+    #[serde(default)]
+    pub to: Option<i64>,
+}
+
 pub async fn export_csv(
     State(state): State<AppState>,
     user: AuthUser,
+    Query(q): Query<CsvQuery>,
 ) -> Result<impl axum::response::IntoResponse, (StatusCode, String)> {
+    let from = q.from.unwrap_or(0);
+    let to = q.to.unwrap_or(i64::MAX);
     let rows = sqlx::query(
-        "SELECT donor_name, amount, message, paid_at FROM donations WHERE user_id=? AND status='paid' ORDER BY paid_at DESC",
+        "SELECT donor_name, amount, message, paid_at FROM donations
+         WHERE user_id=? AND status='paid' AND created_at >= ? AND created_at <= ?
+         ORDER BY paid_at DESC",
     )
     .bind(&user.user_id)
+    .bind(from)
+    .bind(to)
     .fetch_all(&state.db)
     .await
     .map_err(db_err)?;
@@ -314,15 +345,11 @@ pub async fn wallet(
     State(state): State<AppState>,
     user: AuthUser,
 ) -> Result<Json<Wallet>, (StatusCode, String)> {
+    let balance = compute_balance(&state.db, &user.user_id).await?;
     let total_earned = total_earned(&state.db, &user.user_id).await?;
-    let (pending, withdrawn) = pending_and_withdrawn(&state.db, &user.user_id).await?;
+    let (pending_withdraw, total_withdrawn) = pending_and_withdrawn(&state.db, &user.user_id).await?;
 
-    Ok(Json(Wallet {
-        total_earned,
-        pending_withdraw: pending,
-        total_withdrawn: withdrawn,
-        balance: total_earned - pending - withdrawn,
-    }))
+    Ok(Json(Wallet { total_earned, pending_withdraw, total_withdrawn, balance }))
 }
 
 async fn total_earned(db: &SqlitePool, user_id: &str) -> Result<i64, (StatusCode, String)> {
@@ -405,7 +432,9 @@ pub async fn create_withdrawal(
     if bank_name.is_empty() || bank_name.chars().count() > 60 {
         return Err((StatusCode::BAD_REQUEST, "กรุณาระบุชื่อธนาคาร".into()));
     }
-    if bank_account.is_empty() || bank_account.len() > 30 || !bank_account.chars().all(|c| c.is_ascii_digit() || c == '-') {
+    let digits_ok =
+        bank_account.len() >= 10 && bank_account.len() <= 30 && bank_account.chars().all(|c| c.is_ascii_digit() || c == '-');
+    if !digits_ok {
         return Err((StatusCode::BAD_REQUEST, "เลขบัญชีต้องเป็นตัวเลข 10-30 หลัก".into()));
     }
     if !(100..=1_000_000).contains(&body.amount) {
@@ -446,6 +475,36 @@ pub async fn create_withdrawal(
             paid_at: None,
         }),
     ))
+}
+
+// ---------- Leaderboard (สำหรับ overlay widget ของตัวเอง) ----------
+
+#[derive(Serialize)]
+pub struct TopEntry {
+    pub donor_name: String,
+    pub total: i64,
+    pub count: i64,
+}
+
+/// GET /api/me/leaderboard — top 3 ของ user ที่ถือ token (สำหรับ overlay widget)
+pub async fn my_leaderboard(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> Result<Json<Vec<TopEntry>>, (StatusCode, String)> {
+    let rows = sqlx::query(
+        "SELECT donor_name, SUM(amount) total, COUNT(*) count
+         FROM donations WHERE user_id=? AND status='paid' AND hidden=0
+         GROUP BY donor_name ORDER BY total DESC LIMIT 3",
+    )
+    .bind(&user.user_id)
+    .fetch_all(&state.db)
+    .await
+    .map_err(db_err)?;
+
+    Ok(Json(rows
+        .into_iter()
+        .map(|r| TopEntry { donor_name: r.get("donor_name"), total: r.get("total"), count: r.get("count") })
+        .collect()))
 }
 
 // ---------- Alert sound upload ----------

@@ -23,6 +23,7 @@ export interface DonationItem {
   message: string
   sound: string
   hidden: boolean
+  pinned: boolean
   created_at: number
   paid_at: number | null
 }
@@ -65,6 +66,18 @@ export const dashApi = {
       method: 'PATCH',
       body: JSON.stringify({ hidden }),
     }),
+  setPinned: (id: string, pinned: boolean) =>
+    request<{ ok: boolean }>(`/api/me/donations/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ pinned }),
+    }),
+  csvUrl: (from?: number, to?: number) => {
+    const params = new URLSearchParams()
+    if (from) params.set('from', String(from))
+    if (to) params.set('to', String(to))
+    const qs = params.toString()
+    return `/api/me/donations.csv${qs ? '?' + qs : ''}`
+  },
   uploadSound: async (file: File) => {
     const fd = new FormData()
     fd.append('file', file)

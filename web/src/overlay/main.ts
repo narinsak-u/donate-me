@@ -1,9 +1,11 @@
 // Overlay สำหรับ OBS Browser Source — standalone ไม่ผ่าน SPA router
 // ใช้: /overlay.html?token=<JWT> — แสดงเฉพาะโดเนตของสตรีมเมอร์ที่ถือ token นั้น
 // ⚠️ ไม่ดึง token จาก localStorage (แท็บอื่นล็อกอินค้างจะทำให้ฟัง user ผิด)
-//    แบบไม่ใส่ token = ฟังโดเนตของ streamer เริ่มต้น (โหมดใช้คนเดียว)
+//    แบบไม่ใส่ token = ฟังโดเนตของ streamer เริ่มต้น (ต้องเปิด ALLOW_PUBLIC_OVERLAY ใน .env)
 
-import { api, type DonationEvent, type Settings } from '../api/auth'
+import { api, type DonationEvent, type Settings, type TopDonator } from '../api/auth'
+import { playSound, playTtsSequence } from '../sounds'
+import { burstConfetti } from '../confetti'
 
 const token = new URLSearchParams(location.search).get('token') ?? ''
 
@@ -11,29 +13,27 @@ const token = new URLSearchParams(location.search).get('token') ?? ''
 const root = document.getElementById('app')!
 root.innerHTML = `
   <div id="alert" style="
-    position:fixed; top:44%; left:50%; transform:translate(-50%,-50%) scale(0) rotate(-2deg);
+    position:fixed; left:50%; transform:translate(-50%,-50%) scale(0) rotate(-2deg);
     width:560px; padding:26px 30px 22px; border-radius:22px; text-align:left;
     background:linear-gradient(160deg, rgba(17,26,45,.94), rgba(11,17,32,.96));
     border:1.5px solid rgba(148,163,184,.28);
     box-shadow:0 24px 70px rgba(0,0,0,.6), 0 0 70px rgba(244,63,94,.28);
-    opacity:0; transition:transform .55s cubic-bezier(.2,1.6,.4,1), opacity .3s;
+    opacity:0; transition:transform .55s cubic-bezier(.2,1.6,.4,1), opacity .3s, top .3s;
     font-family:'Noto Sans Thai','Segoe UI',sans-serif; color:#e8eef9;">
-    <div style="position:absolute; inset:0; border-radius:22px; overflow:hidden; pointer-events:none; border-radius:22px;">
+    <div style="position:absolute; inset:0; border-radius:22px; overflow:hidden; pointer-events:none;">
       <div id="a-shine" style="position:absolute; top:-60%; left:-80%; width:45%; height:220%;
         background:linear-gradient(100deg, transparent, rgba(255,255,255,.18), transparent);
         transform:rotate(15deg);"></div>
     </div>
-    <!-- header row -->
     <div id="a-head" style="display:flex; align-items:center; justify-content:space-between; position:relative;">
       <span id="a-badge" style="display:inline-flex; align-items:center; gap:7px; padding:7px 16px;
         border-radius:999px; font-size:14px; font-weight:800; font-family:'Plus Jakarta Sans',sans-serif;
         background:linear-gradient(90deg,#fb7185,#f43f5e); color:#fff;">
-        ❤️ SUPER CHAT DONATION
+        ❤️ DONATION
       </span>
       <span id="a-tts" style="display:none; align-items:center; gap:7px; padding:6px 13px; border-radius:999px;
         font-size:12px; font-weight:700; background:rgba(16,185,129,.15); color:#34d399;">🔊 TH-TTS</span>
     </div>
-    <!-- donor row -->
     <div style="display:flex; align-items:center; gap:16px; margin-top:18px; position:relative;">
       <div id="a-avatar" style="width:64px; height:64px; border-radius:50%; flex-shrink:0;
         background:linear-gradient(135deg,#f43f5e,#a855f7); display:flex; align-items:center;
@@ -47,25 +47,34 @@ root.innerHTML = `
           <span id="a-amount" style="font-size:42px; font-weight:800; font-family:'Plus Jakarta Sans',sans-serif;
             background:linear-gradient(90deg,#fde68a,#fbbf24); -webkit-background-clip:text; background-clip:text; color:transparent;"></span>
           <span id="a-tier" style="padding:4px 13px; border-radius:8px; font-size:12px; font-weight:800;
-            letter-spacing:.5px; font-family:'Plus Jakarta Sans',sans-serif; background:rgba(251,191,36,.15); color:#fbbf24;">GOLD TIER</span>
+            letter-spacing:.5px; font-family:'Plus Jakarta Sans',sans-serif; background:rgba(251,191,36,.15); color:#fbbf24;">SUPPORT TIER</span>
         </div>
       </div>
     </div>
-    <!-- message bubble -->
+    <img id="a-img" alt="" style="display:none; max-width:100%; max-height:170px; border-radius:14px; margin-top:16px; position:relative;">
     <div id="a-msg-wrap" style="margin-top:16px; padding:14px 18px; border-radius:14px;
       background:rgba(148,163,184,.1); border:1px solid rgba(148,163,184,.15); position:relative;">
       <div id="a-msg" style="font-size:16px; line-height:1.6; color:#e2e8f0;"></div>
     </div>
-    <!-- footer -->
     <div style="display:flex; align-items:center; justify-content:space-between; margin-top:14px; position:relative;">
       <span id="a-sound" style="font-size:12px; color:#94a3b8;">♪ เสียงประกอบ</span>
       <span style="font-size:12px; color:#f43f5e; font-weight:700;">● Donate Me ❤️ Engine</span>
     </div>
   </div>
+  <!-- Leaderboard widget (มุมล่างซ้าย) -->
+  <div id="lb" style="display:none; position:fixed; left:22px; bottom:22px; width:230px;
+    background:rgba(11,17,32,.82); backdrop-filter:blur(8px); border:1px solid rgba(148,163,184,.25);
+    border-radius:14px; padding:12px 14px; font-family:'Noto Sans Thai',sans-serif; color:#e8eef9;">
+    <div style="font-size:12px; font-weight:800; color:#fbbf24; margin-bottom:8px;">🏆 TOP DONATORS</div>
+    <ol id="lb-list" style="list-style:none; display:grid; gap:5px;"></ol>
+  </div>
   <style>
     @keyframes bounce { from { transform:translateY(0); } to { transform:translateY(-8px); } }
     @keyframes shine { from { left:-80%; } to { left:160%; } }
-    .confetti { position:fixed; font-size:22px; pointer-events:none; animation:fall 3s linear forwards; z-index:-1; }
+    .lb-row { display:flex; align-items:center; gap:7px; font-size:12px; }
+    .lb-row .lb-n { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#e2e8f0; }
+    .lb-row .lb-t { color:#fbbf24; font-weight:700; }
+    .confetti { position:fixed; top:-30px; pointer-events:none; animation:fall 3s linear forwards; z-index:-1; }
     @keyframes fall { to { transform:translateY(105vh) rotate(720deg); opacity:0; } }
   </style>
 `
@@ -76,12 +85,15 @@ const alertBox = root.querySelector<HTMLElement>('#alert')!
 const elBadge = root.querySelector<HTMLElement>('#a-badge')!
 const elTts = root.querySelector<HTMLElement>('#a-tts')!
 const elAvatar = root.querySelector<HTMLElement>('#a-avatar')!
+const elImg = root.querySelector<HTMLImageElement>('#a-img')!
 const elName = root.querySelector<HTMLElement>('#a-name')!
 const elAmount = root.querySelector<HTMLElement>('#a-amount')!
 const elTier = root.querySelector<HTMLElement>('#a-tier')!
 const elMsg = root.querySelector<HTMLElement>('#a-msg')!
 const elSound = root.querySelector<HTMLElement>('#a-sound')!
 const elShine = root.querySelector<HTMLElement>('#a-shine')!
+const lbBox = root.querySelector<HTMLElement>('#lb')!
+const lbList = root.querySelector<HTMLElement>('#lb-list')!
 
 function playShine() {
   elShine.style.animation = 'none'
@@ -89,16 +101,7 @@ function playShine() {
   elShine.style.animation = 'shine 1.1s ease-out .35s'
 }
 
-// tier ตามยอด — สไตล์ SUPER CHAT ตามดีไซน์ Stitch
-function tierOf(amount: number): {
-  scale: number; badge: string; tier: string; tierColor: string; avatar: string;
-  confettiCount: number; soundLabel: string;
-} {
-  if (amount >= 500) return { scale: 1.22, badge: '❤️ SUPER CHAT DONATION', tier: 'GOLD TIER', tierColor: '#fbbf24', avatar: '👑', confettiCount: 80, soundLabel: '♪ Sound: Level_Up_Super.mp3' }
-  if (amount >= 100) return { scale: 1.08, badge: '⭐ VIP DONATION', tier: 'VIP TIER', tierColor: '#a78bfa', avatar: '💜', confettiCount: 50, soundLabel: '♪ Sound: Vip_Glow.mp3' }
-  return { scale: 1, badge: '❤️ DONATION', tier: 'SUPPORT TIER', tierColor: '#34d399', avatar: '💗', confettiCount: 30, soundLabel: '♪ Sound: Standard_Support.mp3' }
-}
-
+// ---------- settings ----------
 let settings: Settings = {
   theme: 'pink',
   goal_amount: 0,
@@ -108,6 +111,11 @@ let settings: Settings = {
   alert_sound_url: '',
   alert_image_url: '',
   show_leaderboard: true,
+  alert_position: 'middle',
+  tts_speed: 1.0,
+  tts_max_len: 120,
+  tier_vip_amount: 100,
+  tier_gold_amount: 500,
 }
 
 async function loadSettings() {
@@ -119,110 +127,43 @@ async function loadSettings() {
   }
 }
 
+const POSITIONS: Record<string, string> = { top: '20%', middle: '44%', bottom: '68%' }
+function applyPosition() {
+  alertBox.style.top = POSITIONS[settings.alert_position] ?? POSITIONS.middle
+}
+
+// ธีมสี accent ของ badge และพื้นหลังการ์ด ตาม settings.theme
 function applyTheme() {
-  // ธีมสี accent ของ badge ตาม settings.theme (เข้ากับกรอบกระจกมืดตายดีไซน์ Stitch)
-  const hues: Record<string, [string, string]> = {
-    pink: ['#fb7185', '#f43f5e'],
-    blue: ['#60a5fa', '#3b82f6'],
-    green: ['#34d399', '#10b981'],
-    dark: ['#94a3b8', '#64748b'],
+  const themes: Record<string, { c1: string; c2: string; bg: string }> = {
+    pink: { c1: '#fb7185', c2: '#f43f5e', bg: 'linear-gradient(160deg, rgba(45,17,35,.94), rgba(17,10,25,.96))' },
+    blue: { c1: '#60a5fa', c2: '#3b82f6', bg: 'linear-gradient(160deg, rgba(15,30,55,.94), rgba(8,15,32,.96))' },
+    green: { c1: '#34d399', c2: '#10b981', bg: 'linear-gradient(160deg, rgba(10,38,30,.94), rgba(6,20,16,.96))' },
+    dark: { c1: '#94a3b8', c2: '#64748b', bg: 'linear-gradient(160deg, rgba(17,26,45,.94), rgba(11,17,32,.96))' },
   }
-  const [c1, c2] = hues[settings.theme] ?? hues.pink!
-  elBadge.style.background = `linear-gradient(90deg, ${c1}, ${c2})`
+  const t = themes[settings.theme] ?? themes.pink!
+  elBadge.style.background = `linear-gradient(90deg, ${t.c1}, ${t.c2})`
+  alertBox.style.background = t.bg
 }
 
-// ---------- เสียงสังเคราะห์ Web Audio (ไม่ต้องมีไฟล์) ----------
-let audioCtx: AudioContext | undefined
-function ctx(): AudioContext {
-  audioCtx ??= new AudioContext()
-  return audioCtx
+// ---------- tier ตามยอด (เกณฑ์มาจาก settings) ----------
+function tierOf(amount: number): {
+  scale: number; badge: string; tier: string; tierColor: string; avatar: string;
+  confettiCount: number; soundLabel: string;
+} {
+  if (amount >= settings.tier_gold_amount)
+    return { scale: 1.22, badge: '❤️ SUPER CHAT DONATION', tier: 'GOLD TIER', tierColor: '#fbbf24', avatar: '👑', confettiCount: 80, soundLabel: '♪ Sound: Level_Up_Super.mp3' }
+  if (amount >= settings.tier_vip_amount)
+    return { scale: 1.08, badge: '⭐ VIP DONATION', tier: 'VIP TIER', tierColor: '#a78bfa', avatar: '💜', confettiCount: 50, soundLabel: '♪ Sound: Vip_Glow.mp3' }
+  return { scale: 1, badge: '❤️ DONATION', tier: 'SUPPORT TIER', tierColor: '#34d399', avatar: '💗', confettiCount: 30, soundLabel: '♪ Sound: Standard_Support.mp3' }
 }
 
-// browser บล็อก autoplay: ถ้า AudioContext ถูก suspend ให้โชว์ปุ่มกดเปิดเสียง
-function showUnmuteIfNeeded() {
-  if (ctx().state !== 'suspended' || document.getElementById('unmute-chip')) return
-  const chip = document.createElement('button')
-  chip.id = 'unmute-chip'
-  chip.textContent = '🔇 กดเพื่อเปิดเสียงแจ้งเตือน'
-  chip.style.cssText =
-    'position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:999;' +
-    'padding:10px 20px;border:none;border-radius:999px;cursor:pointer;font-size:14px;font-weight:700;' +
-    "background:#f43f5e;color:#fff;font-family:'Noto Sans Thai',sans-serif;box-shadow:0 6px 20px rgba(244,63,94,.5)"
-  chip.onclick = () => {
-    void ctx().resume()
-    chip.remove()
-  }
-  document.body.appendChild(chip)
-  // พยายาม resume เองเมื่อผู้ใช้คลิกที่ใดก็ได้ในหน้า
-  document.addEventListener('click', () => void ctx().resume(), { once: true })
-}
-showUnmuteIfNeeded()
-ctx().addEventListener?.('statechange', showUnmuteIfNeeded)
-// กลับมาที่แท็บ = ลองปลุกเสียงทันที (browser มัก suspend ตอนแท็บถูกซ่อน)
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) {
-    void ctx().resume().catch(() => {})
-    showUnmuteIfNeeded()
-  }
-})
-
-function tone(freq: number, start: number, dur: number, type: OscillatorType = 'sine', vol = 0.3) {
-  const c = ctx()
-  const o = c.createOscillator()
-  const g = c.createGain()
-  o.type = type
-  o.frequency.value = freq
-  g.gain.setValueAtTime(vol, c.currentTime + start)
-  g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + start + dur)
-  o.connect(g).connect(c.destination)
-  o.start(c.currentTime + start)
-  o.stop(c.currentTime + start + dur)
-}
-
-const sounds: Record<string, () => void> = {
-  chime: () => [880, 1108.7, 1318.5, 1760].forEach((f, i) => tone(f, i * 0.12, 0.8, 'sine', 0.25)),
-  coin: () => {
-    tone(988, 0, 0.09, 'square', 0.2)
-    tone(1319, 0.09, 0.5, 'square', 0.2)
-  },
-  fanfare: () => {
-    ;[
-      [523, 0], [523, 0.15], [523, 0.3], [659, 0.45], [784, 0.65],
-      [659, 0.85], [784, 1.0], [1047, 1.15],
-    ].forEach(([f, t]) => tone(f, t, 0.35, 'sawtooth', 0.12))
-  },
-}
-
-function speak(d: DonationEvent) {
-  // ข้อความ render เป็น text ล้วน — ปลอดภัยจาก XSS
-  const text = settings.alert_text
-    .replaceAll('{name}', d.donor_name)
-    .replaceAll('{amount}', d.amount.toLocaleString())
-  const u = new SpeechSynthesisUtterance(`${text}${d.message ? `. ${d.message}` : ''}`)
-  u.lang = 'th-TH'
-  // เครื่องไม่มี voice เลย (เช่น Windows ไม่ได้ติดตั้งภาษาไทย) → TTS เงียบ
-  // fallback: เล่นเสียงแตรวงแทน พร้อมข้อความแจ้งใน console ของ OBS
-  const voices = speechSynthesis.getVoices()
-  if (voices.length === 0) {
-    console.warn('[Donate Me] ไม่พบ voice TTS ในเครื่อง — เล่นเสียงแตรวงแทน (ติดตั้งภาษาไทยใน OS เพื่อใช้ TTS)')
-    sounds.fanfare()
-    return
-  }
-  const thVoice = voices.find((v) => v.lang.startsWith('th'))
-  if (thVoice) u.voice = thVoice
-  speechSynthesis.cancel()
-  speechSynthesis.speak(u)
-}
-
-// ---------- ป็อบอัพ + คอนเฟตติ ----------
+// ---------- ป็อบอัพ ----------
 let hideTimer: ReturnType<typeof setTimeout> | undefined
 
 function showAlert(d: DonationEvent) {
   clearTimeout(hideTimer)
-  // ปลุก AudioContext ก่อนเล่นเสียงเสมอ — browser มัก suspend เสียงแท็บที่เพิ่งกลับมา
-  void ctx().resume().catch(() => {})
-  // กัน XSS: ใช้ textContent เท่านั้น ห้าม innerHTML กับข้อมูลจากผู้ใช้
   const tier = tierOf(d.amount)
+  // กัน XSS: ใช้ textContent เท่านั้น ห้าม innerHTML กับข้อมูลจากผู้ใช้
   elName.textContent = d.donor_name
   elAmount.textContent = `฿${d.amount.toLocaleString()}`
   elAvatar.textContent = tier.avatar
@@ -233,47 +174,67 @@ function showAlert(d: DonationEvent) {
   elTier.style.background = `${tier.tierColor}26`
   elSound.textContent = tier.soundLabel
   elTts.style.display = d.sound === 'tts' ? 'inline-flex' : 'none'
-  // tier เอฟเฟกต์: ยอดสูง = ป็อบอัพใหญ่ขึ้น + คอนเฟตติเยอะขึ้น
-  alertBox.style.transform = `translate(-50%,-50%) scale(0) rotate(-2deg)`
+  // media alert: รูป/GIF จาก settings (https เท่านั้น ตรวจแล้วฝั่ง server)
+  if (settings.alert_image_url) {
+    elImg.src = settings.alert_image_url
+    elImg.style.display = 'block'
+  } else {
+    elImg.style.display = 'none'
+  }
+  applyPosition()
   applyTheme()
+  alertBox.style.transform = 'translate(-50%,-50%) scale(0) rotate(-2deg)'
   requestAnimationFrame(() => {
     alertBox.style.transform = `translate(-50%,-50%) scale(${tier.scale}) rotate(0deg)`
     alertBox.style.opacity = '1'
   })
   playShine()
-  confetti(tier.confettiCount)
+  burstConfetti(tier.confettiCount, undefined, { behind: true })
 
+  // เสียง: tts = กระดิ่งนำ → เสียงอ่านตาม (ใช้ speed/max_len จาก settings)
   if (d.sound === 'tts' && settings.tts_enabled) {
-    // กระดิ่งนำก่อน แล้วค่อยตามด้วยเสียงอ่านข้อความ (หลังเสียงกระดิ่งจบ ~1.2 วิ)
-    setTimeout(() => (sounds.chime)(), 60)
-    setTimeout(() => speak(d), 1400)
+    const text = settings.alert_text
+      .replaceAll('{name}', d.donor_name)
+      .replaceAll('{amount}', d.amount.toLocaleString())
+    const full = `${text}${d.message ? `. ${d.message.slice(0, settings.tts_max_len)}` : ''}`
+    playTtsSequence(full, settings.tts_speed)
   } else if (settings.alert_sound_url) {
     // เสียงอัปโหลดของสตรีมเมอร์ — เล่นทับเสียงสังเคราะห์
     const audio = new Audio(settings.alert_sound_url)
-    void audio.play().catch(() => (sounds[d.sound] ?? sounds.chime)())
+    void audio.play().catch(() => playSound(d.sound))
   } else {
-    // หน่วงนิดเดียวให้ resume() เสร็จก่อน — ไม่งั้น oscillator อาจถูกตัดตอน ctx ยัง suspended
-    setTimeout(() => (sounds[d.sound] ?? sounds.chime)(), 60)
+    playSound(d.sound)
   }
 
   hideTimer = setTimeout(() => {
-    alertBox.style.transform = 'translate(-50%,-50%) scale(0) rotate(-3deg)'
+    alertBox.style.transform = 'translate(-50%,-50%) scale(0) rotate(-2deg)'
     alertBox.style.opacity = '0'
   }, settings.alert_duration_sec * 1000)
 }
 
-function confetti(count = 30) {
-  const emojis = ['🎉', '💜', '✨', '🎊', '💰']
-  for (let i = 0; i < count; i++) {
-    const el = document.createElement('div')
-    el.className = 'confetti'
-    el.textContent = emojis[(Math.random() * emojis.length) | 0]!
-    el.style.left = `${Math.random() * 100}vw`
-    el.style.top = '-30px'
-    el.style.animationDelay = `${Math.random() * 0.8}s`
-    el.style.animationDuration = `${2.2 + Math.random() * 1.5}s`
-    document.body.appendChild(el)
-    setTimeout(() => el.remove(), 4500)
+// ---------- Leaderboard widget ----------
+async function loadLeaderboard() {
+  if (!token) return
+  try {
+    const top: TopDonator[] = await api.leaderboard()
+    if (!settings.show_leaderboard || top.length === 0) {
+      lbBox.style.display = 'none'
+      return
+    }
+    lbList.innerHTML = top
+      .map(
+        (t, i) =>
+          `<li class="lb-row"><span>${['🥇', '🥈', '🥉'][i] ?? '#' + (i + 1)}</span><span class="lb-n"></span><span class="lb-t">฿${t.total.toLocaleString()}</span></li>`,
+      )
+      .join('')
+    // ชื่อใส่แบบ textContent (กัน XSS) — เติมทีหลัง innerHTML ของโครง
+    const names = lbList.querySelectorAll<HTMLElement>('.lb-n')
+    top.forEach((t, i) => {
+      if (names[i]) names[i]!.textContent = t.donor_name
+    })
+    lbBox.style.display = 'block'
+  } catch {
+    lbBox.style.display = 'none'
   }
 }
 
@@ -283,6 +244,7 @@ function connect() {
   const es = new EventSource(url)
   es.addEventListener('donation', (e) => {
     showAlert(JSON.parse((e as MessageEvent).data) as DonationEvent)
+    void loadLeaderboard() // อัปเดตกระดานหลังมีโดเนตใหม่
   })
   es.onerror = () => {
     es.close()
@@ -290,7 +252,13 @@ function connect() {
   }
 }
 
-void loadSettings().then(connect)
+void (async () => {
+  await loadSettings()
+  applyTheme()
+  applyPosition()
+  await loadLeaderboard()
+  connect()
+})()
 
 // ทดสอบจาก OBS ได้: เรียก window.testAlert() ใน console ของ Browser Source
 declare global {
@@ -299,4 +267,4 @@ declare global {
   }
 }
 window.testAlert = () =>
-  showAlert({ user_id: '', id: 'test', donor_name: 'คุณทดสอบ', amount: 100, message: 'นี่คือการทดสอบป็อบอัพ', sound: 'chime' })
+  showAlert({ user_id: '', id: 'test', donor_name: 'คุณทดสอบ', amount: 250, message: 'นี่คือการทดสอบป็อบอัพ', sound: 'chime' })

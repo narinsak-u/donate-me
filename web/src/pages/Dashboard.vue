@@ -2,8 +2,10 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api, getToken, getUser, type PublicUser, type Settings } from '../api/auth'
-import { dashApi, type DonationItem, type Stats, type Wallet, type Withdrawal } from '../api/dashboard'
+import { dashApi, type DonationItem, type Stats } from '../api/dashboard'
+import { applyTheme, toggleTheme } from '../theme'
 import DonationChart from '../components/DonationChart.vue'
+import WalletTab from '../components/WalletTab.vue'
 
 const router = useRouter()
 const user = ref<PublicUser | null>(getUser())
@@ -12,15 +14,6 @@ const donateLink = ref('')
 const copied = ref(false)
 const overlayUrl = ref('')
 const obsCopied = ref(false)
-
-// wallet
-const wallet = ref<Wallet | null>(null)
-const withdrawals = ref<Withdrawal[]>([])
-const wAmount = ref<number | null>(null)
-const wBank = ref('')
-const wAccount = ref('')
-const wBusy = ref(false)
-const wError = ref('')
 
 const stats = ref<Stats | null>(null)
 const items = ref<DonationItem[]>([])
@@ -32,7 +25,7 @@ const soundFile = ref<File | null>(null)
 const soundUrl = ref('')
 
 onMounted(async () => {
-  document.documentElement.setAttribute('data-theme', localStorage.getItem('donateme_theme') ?? 'dark')
+  applyTheme()
   if (!getToken()) {
     router.push('/auth')
     return
@@ -44,7 +37,8 @@ onMounted(async () => {
   const [s, st] = await Promise.all([dashApi.stats(), api.getSettings()])
   stats.value = s
   settings.value = st
-  await Promise.all([loadHistory(), loadWallet()])})
+  await loadHistory()
+})
 
 async function loadHistory() {
   const toMillis = (d: string, end = false) => {
@@ -60,33 +54,6 @@ async function loadHistory() {
   })
   items.value = res.items
   totalPages.value = res.total_pages
-}
-
-async function loadWallet() {
-  const [w, ws] = await Promise.all([dashApi.wallet(), dashApi.withdrawals()])
-  wallet.value = w
-  withdrawals.value = ws
-}
-
-async function submitWithdraw() {
-  wError.value = ''
-  if (!wallet.value) return
-  wBusy.value = true
-  try {
-    await dashApi.requestWithdrawal({
-      amount: wAmount.value ?? 0,
-      bank_name: wBank.value,
-      bank_account: wAccount.value,
-    })
-    wAmount.value = null
-    wBank.value = ''
-    wAccount.value = ''
-    await loadWallet()
-  } catch (e) {
-    wError.value = e instanceof Error ? e.message : 'ส่งคำขอไม่สำเร็จ'
-  } finally {
-    wBusy.value = false
-  }
 }
 
 function copyLink() {
@@ -105,6 +72,21 @@ async function toggleHidden(item: DonationItem) {
   await dashApi.setHidden(item.id, !item.hidden)
   item.hidden = !item.hidden
 }
+
+async function togglePinned(item: DonationItem) {
+  await dashApi.setPinned(item.id, !item.pinned)
+  item.pinned = !item.pinned
+  await loadHistory() // pinned เรียงขึ้นบน
+}
+
+const csvUrl = computed(() => {
+  const toMillis = (d: string, end = false) => {
+    if (!d) return undefined
+    const t = new Date(d).getTime()
+    return end ? t + 86_399_999 : t
+  }
+  return dashApi.csvUrl(toMillis(dateFrom.value), toMillis(dateTo.value, true))
+})
 
 async function save() {
   if (!settings.value) return
@@ -334,7 +316,7 @@ const themeOptions = [
           <section class="card">
             <div class="card-head">
               <h2>🧾 ประวัติการโดนตล่าสุด</h2>
-              <a href="/api/me/donations.csv" class="export-btn">⬇ Export CSV</a>
+              <a :href="csvUrl" class="export-btn">⬇ Export CSV</a>
             </div>
             <div class="toolbar">
               <input v-model="search" class="input" placeholder="ค้นหาชื่อ/ข้อความ..." @keyup.enter="page = 1; loadHistory()" />
@@ -351,11 +333,14 @@ const themeOptions = [
               <tbody>
                 <tr v-for="it in items" :key="it.id">
                   <td class="muted">{{ fmtDate(it.paid_at) }}</td>
-                  <td><b>{{ it.donor_name }}</b></td>
+                  <td><b>{{ it.donor_name }}</b> <span v-if="it.pinned" title="ปักหมุด">📌</span></td>
                   <td class="amount">฿{{ it.amount.toLocaleString() }}</td>
                   <td :class="{ hidden: it.hidden }">{{ it.hidden ? '(ซ่อนแล้ว)' : it.message || '-' }}</td>
                   <td><span class="sound-pill">{{ soundLabel(it.sound) }}</span></td>
-                  <td><button class="mini" @click="toggleHidden(it)">{{ it.hidden ? 'แสดง' : 'ซ่อน' }}</button></td>
+                  <td class="row-actions">
+                    <button class="mini" @click="togglePinned(it)">{{ it.pinned ? '📌 เลิกปัก' : '📌 ปักหมุด' }}</button>
+                    <button class="mini" @click="toggleHidden(it)">{{ it.hidden ? 'แสดง' : 'ซ่อน' }}</button>
+                  </td>
                 </tr>
                 <tr v-if="!items.length"><td colspan="6" class="muted center">ยังไม่มีประวัติโดเนตในช่วงนี้</td></tr>
               </tbody>
@@ -370,79 +355,7 @@ const themeOptions = [
 
         <!-- ===== Wallet ===== -->
         <template v-if="tab === 'wallet'">
-          <div class="metrics">
-            <div class="metric">
-              <div class="metric-head"><span>ยอดถอนได้ (BALANCE)</span><i class="m-icon green">💎</i></div>
-              <b class="metric-num">฿{{ (wallet?.balance ?? 0).toLocaleString() }}</b>
-              <span class="metric-foot">พร้อมถอนทันที</span>
-            </div>
-            <div class="metric">
-              <div class="metric-head"><span>รอดำเนินการ</span><i class="m-icon gold">⏳</i></div>
-              <b class="metric-num">฿{{ (wallet?.pending_withdraw ?? 0).toLocaleString() }}</b>
-              <span class="metric-foot">คำขอถอนที่รอโอน</span>
-            </div>
-            <div class="metric">
-              <div class="metric-head"><span>ถอนสำเร็จแล้ว</span><i class="m-icon pink">🏦</i></div>
-              <b class="metric-num">฿{{ (wallet?.total_withdrawn ?? 0).toLocaleString() }}</b>
-              <span class="metric-foot">ตลอดการใช้งาน</span>
-            </div>
-            <div class="metric">
-              <div class="metric-head"><span>รายได้รวม</span><i class="m-icon blue">📈</i></div>
-              <b class="metric-num">฿{{ (wallet?.total_earned ?? 0).toLocaleString() }}</b>
-              <span class="metric-foot">จากโดเนตทั้งหมด</span>
-            </div>
-          </div>
-
-          <section class="card">
-            <div class="card-head">
-              <h2>🏦 ขอถอนเงิน</h2>
-              <span class="badge badge-gold">MOCK — ยังไม่มีการโอนจริง</span>
-            </div>
-            <p class="muted" style="margin-bottom: 6px">
-              ระบบจำลองการถอน (สถานะ "รอดำเนินการ") — การโอนเข้าบัญชีจริงจะเปิดใช้เมื่อต่อ Omise Payout ในอนาคต
-            </p>
-            <div class="withdraw-form">
-              <div>
-                <label>จำนวนเงิน (ขั้นต่ำ ฿100)</label>
-                <input v-model.number="wAmount" class="input" type="number" min="100" :max="wallet?.balance" placeholder="เช่น 500" />
-              </div>
-              <div>
-                <label>ธนาคาร</label>
-                <input v-model="wBank" class="input" placeholder="เช่น กสิกรไทย (KBank)" maxlength="60" />
-              </div>
-              <div>
-                <label>เลขบัญชี</label>
-                <input v-model="wAccount" class="input" placeholder="เช่น 1234567890" maxlength="30" />
-              </div>
-              <button class="btn-primary" :disabled="wBusy || !wAmount || (wallet?.balance ?? 0) < 100" @click="submitWithdraw">
-                {{ wBusy ? 'กำลังส่ง...' : '💸 ส่งคำขอถอน' }}
-              </button>
-            </div>
-            <p v-if="wError" class="error">{{ wError }}</p>
-          </section>
-
-          <section class="card">
-            <div class="card-head">
-              <h2>📋 ประวัติการถอน</h2>
-            </div>
-            <table v-if="withdrawals.length">
-              <thead>
-                <tr><th>เวลา</th><th>ยอดเงิน</th><th>ธนาคาร</th><th>เลขบัญชี</th><th>สถานะ</th></tr>
-              </thead>
-              <tbody>
-                <tr v-for="w in withdrawals" :key="w.id">
-                  <td class="muted">{{ fmtDate(w.created_at) }}</td>
-                  <td class="amount">฿{{ w.amount.toLocaleString() }}</td>
-                  <td>{{ w.bank_name }}</td>
-                  <td class="muted">{{ w.bank_account }}</td>
-                  <td>
-                    <span class="status-pill" :class="w.status">{{ w.status === 'pending' ? '⏳ รอดำเนินการ' : w.status === 'completed' ? '✅ สำเร็จ' : '❌ ถูกปฏิเสธ' }}</span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-            <p v-else class="muted center" style="padding: 20px">ยังไม่มีประวัติการถอน</p>
-          </section>
+          <WalletTab />
         </template>
 
         <!-- ===== Settings ===== -->
@@ -488,6 +401,29 @@ const themeOptions = [
               <input v-model.number="settings.alert_duration_sec" type="range" min="3" max="30" class="range" />
               <b class="dur-val">{{ settings.alert_duration_sec }} วินาที</b>
             </div>
+
+            <label>ตำแหน่งบนจอ (POSITION)</label>
+            <select v-model="settings.alert_position">
+              <option value="top">บนจอ</option>
+              <option value="middle">กลางจอ</option>
+              <option value="bottom">ล่างจอ</option>
+            </select>
+
+            <label>เกณฑ์ระดับยอด (ALERT TIERS)</label>
+            <div class="tier-config">
+              <div>
+                <span class="t-label t20">SUPPORT</span>
+                <span class="muted small">ต่ำกว่า {{ settings.tier_vip_amount.toLocaleString() }} ฿</span>
+              </div>
+              <div>
+                <label>฿ VIP ตั้งแต่</label>
+                <input v-model.number="settings.tier_vip_amount" type="number" min="1" class="input" />
+              </div>
+              <div>
+                <label>฿ GOLD ตั้งแต่</label>
+                <input v-model.number="settings.tier_gold_amount" type="number" min="1" class="input" />
+              </div>
+            </div>
           </section>
 
           <section class="card">
@@ -499,6 +435,20 @@ const themeOptions = [
               <span>เปิดใช้งานการอ่านออกเสียงข้อความไทย (Thai TTS)</span>
             </label>
             <p class="muted small" style="margin-top: 6px">ระบบจะอ่านข้อความโดเนตออกเสียงไทยในฉากสตรีมทันทีที่ยอดรับเข้ามา</p>
+
+            <div class="tts-opts">
+              <div>
+                <label>ความเร็วเสียงอ่าน (SPEED)</label>
+                <div class="dur-row">
+                  <input v-model.number="settings.tts_speed" type="range" min="0.5" max="2" step="0.1" class="range" />
+                  <b class="dur-val">{{ settings.tts_speed.toFixed(1) }}x</b>
+                </div>
+              </div>
+              <div>
+                <label>จำกัดความยาวอ่าน (ตัวอักษร)</label>
+                <input v-model.number="settings.tts_max_len" type="number" min="20" max="200" class="input" />
+              </div>
+            </div>
 
             <label>เสียงแจ้งเตือนแบบกำหนดเอง (mp3/wav/ogg ≤ 2MB)</label>
             <div class="upload-row">
@@ -763,6 +713,11 @@ td.hidden { color: var(--text-faint); font-style: italic; }
 .dur-row { display: flex; align-items: center; gap: 14px; }
 .range { flex: 1; accent-color: var(--primary); }
 .dur-val { font-size: 13px; color: var(--primary); background: var(--primary-soft); padding: 5px 12px; border-radius: 8px; }
+.tier-config { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; align-items: end; }
+.t-label { font-size: 12px; font-weight: 800; padding: 4px 12px; border-radius: 8px; display: inline-block; }
+.t-label.t20 { background: var(--primary-soft); color: var(--primary); }
+.tts-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 6px; }
+.row-actions { display: flex; gap: 6px; }
 .upload-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .upload-row input[type='file'] { font-size: 12.5px; color: var(--text-dim); }
 .save-row { display: flex; gap: 10px; margin-top: 20px; align-items: center; flex-wrap: wrap; }

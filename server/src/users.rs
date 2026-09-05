@@ -11,6 +11,10 @@ use sqlx::Row;
 use crate::auth::AuthUser;
 use crate::AppState;
 
+fn db_err(e: sqlx::Error) -> (StatusCode, String) {
+    (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}"))
+}
+
 // ---------- Public profile ----------
 
 #[derive(Serialize)]
@@ -35,7 +39,7 @@ pub async fn public_profile(
     .bind(username.to_lowercase())
     .fetch_optional(&state.db)
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}")))?;
+    .map_err(db_err)?;
 
     let row = row.ok_or((StatusCode::NOT_FOUND, "ไม่พบสตรีมเมอร์คนนี้".into()))?;
     Ok(Json(PublicProfile {
@@ -73,7 +77,7 @@ pub async fn top_donators(
     .bind(username.to_lowercase())
     .fetch_all(&state.db)
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}")))?;
+    .map_err(db_err)?;
 
     Ok(Json(rows
         .into_iter()
@@ -109,7 +113,7 @@ pub async fn recent_donations(
     .bind(username.to_lowercase())
     .fetch_all(&state.db)
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}")))?;
+    .map_err(db_err)?;
 
     Ok(Json(rows
         .into_iter()
@@ -134,6 +138,11 @@ pub struct Settings {
     pub alert_sound_url: String,
     pub alert_image_url: String,
     pub show_leaderboard: bool,
+    pub alert_position: String,
+    pub tts_speed: f64,
+    pub tts_max_len: i64,
+    pub tier_vip_amount: i64,
+    pub tier_gold_amount: i64,
 }
 
 #[derive(Deserialize)]
@@ -152,6 +161,16 @@ pub struct UpdateSettings {
     pub alert_image_url: Option<String>,
     #[serde(default)]
     pub show_leaderboard: Option<bool>,
+    #[serde(default)]
+    pub alert_position: Option<String>,
+    #[serde(default)]
+    pub tts_speed: Option<f64>,
+    #[serde(default)]
+    pub tts_max_len: Option<i64>,
+    #[serde(default)]
+    pub tier_vip_amount: Option<i64>,
+    #[serde(default)]
+    pub tier_gold_amount: Option<i64>,
 }
 
 pub async fn get_settings(
@@ -190,8 +209,22 @@ pub async fn update_settings(
     };
     let show_leaderboard = body.show_leaderboard.unwrap_or(cur.show_leaderboard);
 
+    // ตำแหน่งป็อบอัพบนจอ
+    let alert_position = match body.alert_position.as_deref() {
+        Some(p) if ["top", "middle", "bottom"].contains(&p) => p.to_string(),
+        Some(_) => return Err((StatusCode::BAD_REQUEST, "alert_position ต้องเป็น top/middle/bottom".into())),
+        None => cur.alert_position,
+    };
+    let tts_speed = body.tts_speed.unwrap_or(cur.tts_speed).clamp(0.5, 2.0);
+    let tts_max_len = body.tts_max_len.unwrap_or(cur.tts_max_len).clamp(20, 200);
+    let tier_vip_amount = body.tier_vip_amount.unwrap_or(cur.tier_vip_amount).clamp(1, 100_000);
+    let tier_gold_amount = body.tier_gold_amount.unwrap_or(cur.tier_gold_amount).clamp(1, 100_000);
+    if tier_vip_amount >= tier_gold_amount {
+        return Err((StatusCode::BAD_REQUEST, "tier_vip_amount ต้องน้อยกว่า tier_gold_amount".into()));
+    }
+
     sqlx::query(
-        "UPDATE settings SET theme = ?, goal_amount = ?, alert_duration_sec = ?, tts_enabled = ?, alert_text = ?, alert_image_url = ?, show_leaderboard = ? WHERE user_id = ?",
+        "UPDATE settings SET theme = ?, goal_amount = ?, alert_duration_sec = ?, tts_enabled = ?, alert_text = ?, alert_image_url = ?, show_leaderboard = ?, alert_position = ?, tts_speed = ?, tts_max_len = ?, tier_vip_amount = ?, tier_gold_amount = ? WHERE user_id = ?",
     )
     .bind(&theme)
     .bind(goal_amount)
@@ -200,10 +233,15 @@ pub async fn update_settings(
     .bind(&alert_text)
     .bind(&alert_image_url)
     .bind(show_leaderboard as i64)
+    .bind(&alert_position)
+    .bind(tts_speed)
+    .bind(tts_max_len)
+    .bind(tier_vip_amount)
+    .bind(tier_gold_amount)
     .bind(&user.user_id)
     .execute(&state.db)
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}")))?;
+    .map_err(db_err)?;
 
     let updated = fetch_settings(&state, &user.user_id).await?;
     Ok(Json(updated))
@@ -211,12 +249,12 @@ pub async fn update_settings(
 
 async fn fetch_settings(state: &AppState, user_id: &str) -> Result<Settings, (StatusCode, String)> {
     let row = sqlx::query(
-        "SELECT theme, goal_amount, alert_duration_sec, tts_enabled, alert_text, alert_sound_url, alert_image_url, show_leaderboard FROM settings WHERE user_id = ?",
+        "SELECT theme, goal_amount, alert_duration_sec, tts_enabled, alert_text, alert_sound_url, alert_image_url, show_leaderboard, alert_position, tts_speed, tts_max_len, tier_vip_amount, tier_gold_amount FROM settings WHERE user_id = ?",
     )
     .bind(user_id)
     .fetch_optional(&state.db)
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}")))?;
+    .map_err(db_err)?;
     let row = row.ok_or((StatusCode::NOT_FOUND, "ไม่พบ settings".into()))?;
     Ok(Settings {
         theme: row.get("theme"),
@@ -227,5 +265,10 @@ async fn fetch_settings(state: &AppState, user_id: &str) -> Result<Settings, (St
         alert_sound_url: row.get("alert_sound_url"),
         alert_image_url: row.get("alert_image_url"),
         show_leaderboard: row.get::<i64, _>("show_leaderboard") != 0,
+        alert_position: row.get("alert_position"),
+        tts_speed: row.get("tts_speed"),
+        tts_max_len: row.get("tts_max_len"),
+        tier_vip_amount: row.get("tier_vip_amount"),
+        tier_gold_amount: row.get("tier_gold_amount"),
     })
 }

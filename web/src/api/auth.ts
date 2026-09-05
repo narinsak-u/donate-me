@@ -104,6 +104,11 @@ export interface Settings {
   alert_sound_url: string
   alert_image_url: string
   show_leaderboard: boolean
+  alert_position: string
+  tts_speed: number
+  tts_max_len: number
+  tier_vip_amount: number
+  tier_gold_amount: number
 }
 
 export interface TopDonator {
@@ -139,4 +144,5 @@ export const api = {
   getSettings: () => request<Settings>('/api/me/settings'),
   updateSettings: (body: Partial<Settings>) =>
     request<Settings>('/api/me/settings', { method: 'PUT', body: JSON.stringify(body) }),
+  leaderboard: () => request<TopDonator[]>('/api/me/leaderboard'),
 }

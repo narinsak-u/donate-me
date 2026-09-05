@@ -36,15 +36,14 @@ const error = ref('')
 const targetUsername =
   new URLSearchParams(location.search).get('u') || (route.query.u as string) || undefined
 
-// theme toggle (dark = Minimal & Friendly, light = Clean Light Mode)
+// theme toggle (dark = Minimal & Friendly, light = Clean Light Mode) — ใช้ theme.ts กลาง
+import { applyTheme, toggleTheme } from '../theme'
 const theme = ref(localStorage.getItem('donateme_theme') ?? 'dark')
-function toggleTheme() {
-  theme.value = theme.value === 'dark' ? 'light' : 'dark'
-  localStorage.setItem('donateme_theme', theme.value)
-  document.documentElement.setAttribute('data-theme', theme.value)
+function onToggleTheme() {
+  theme.value = toggleTheme()
 }
 onMounted(() => {
-  document.documentElement.setAttribute('data-theme', theme.value)
+  applyTheme(theme.value as "dark" | "light")
   if (targetUsername) {
     api.publicProfile(targetUsername)
       .then(async (p) => {
@@ -136,7 +135,7 @@ async function submit() {
         <a href="#" class="pill">จุดรับโดเนต</a>
       </nav>
       <div class="topbar-right">
-        <button class="theme-toggle" title="สลับธีม" @click="toggleTheme">{{ theme === 'dark' ? '☀️' : '🌙' }}</button>
+        <button class="theme-toggle" title="สลับธีม" @click="onToggleTheme">{{ theme === 'dark' ? '☀️' : '🌙' }}</button>
         <a href="/#/dashboard" class="join-btn">เข้าร่วม</a>
         <div class="me-avatar">ME</div>
       </div>

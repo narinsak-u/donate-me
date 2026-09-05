@@ -2,7 +2,12 @@
 
 const DEFAULT_EMOJIS = ['🎉', '💜', '✨', '🎊', '💰', '❤️']
 
-export function burstConfetti(count = 60, emojis: string[] = DEFAULT_EMOJIS) {
+export function burstConfetti(
+  count = 60,
+  emojis: string[] = DEFAULT_EMOJIS,
+  opts?: { behind?: boolean },
+) {
+  const zindex = opts?.behind ? '-1' : '9999'
   for (let i = 0; i < count; i++) {
     const el = document.createElement('div')
     el.className = 'dm-confetti'
@@ -12,6 +17,7 @@ export function burstConfetti(count = 60, emojis: string[] = DEFAULT_EMOJIS) {
     el.style.fontSize = `${16 + Math.random() * 14}px`
     el.style.animationDelay = `${Math.random() * 0.8}s`
     el.style.animationDuration = `${2.2 + Math.random() * 1.5}s`
+    el.style.zIndex = zindex
     document.body.appendChild(el)
     setTimeout(() => el.remove(), 4500)
   }

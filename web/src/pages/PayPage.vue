@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { api, type DonationStatusResponse } from '../api/auth'
 import { playSound } from '../sounds'
 import { burstConfetti } from '../confetti'
+import { applyTheme } from '../theme'
 
 const props = defineProps<{ id: string }>()
 const route = useRoute()
@@ -37,8 +38,7 @@ function speakThanks() {
 }
 
 onMounted(() => {
-  const t = localStorage.getItem('donateme_theme') ?? 'dark'
-  document.documentElement.setAttribute('data-theme', t)
+  applyTheme()
   timer = setInterval(async () => {
     secondsLeft.value = Math.max(0, secondsLeft.value - 1)
     try {

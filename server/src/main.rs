@@ -37,6 +37,8 @@ pub struct AppState {
     pub auth_limiter: Arc<rate_limit::RateLimiter>,
     // Phase 6: ผู้ให้บริการชำระเงิน (mock หรือ Omise)
     pub payment: Arc<payment::PaymentProvider>,
+    // Security: อนุญาตให้ /events แบบไม่มี token ฟัง default streamer (โหมดใช้คนเดียว)
+    pub allow_public_overlay: bool,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -303,10 +305,21 @@ fn row_into_donation(row: &sqlx::sqlite::SqliteRow) -> DonationRow {
 
 async fn events(
     State(state): State<AppState>,
-    maybe: auth::MaybeAuthUser, // มี token = ฟังเฉพาะของ user นั้น; ไม่มี = ฟังของ streamer เริ่มต้น
-) -> Sse<impl tokio_stream::Stream<Item = Result<Event, tokio_stream::wrappers::errors::BroadcastStreamRecvError>>>
+    maybe: auth::MaybeAuthUser,
+) -> Result<Sse<impl tokio_stream::Stream<Item = Result<Event, tokio_stream::wrappers::errors::BroadcastStreamRecvError>>>, (StatusCode, &'static str)>
 {
-    let my_id = maybe.user_id.unwrap_or_else(|| state.user_id.clone());
+    // Security: แบบไม่มี token จะได้ยินโดเนตของ default streamer เฉพาะเมื่อเปิดใช้
+    // ALLOW_PUBLIC_OVERLAY=true ใน .env (โหมดใช้คนเดียว) — production ควรปิด (default)
+    let my_id = match maybe.user_id {
+        Some(id) => id,
+        None if state.allow_public_overlay => state.user_id.clone(),
+        None => {
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                "ต้องมี token สำหรับ /events (หรือเปิด ALLOW_PUBLIC_OVERLAY ใน .env สำหรับโหมดใช้คนเดียว)",
+            ))
+        }
+    };
     let rx = state.tx.subscribe();
     let stream = tokio_stream::wrappers::BroadcastStream::new(rx)
         .filter_map(move |msg| {
@@ -319,7 +332,7 @@ async fn events(
                 .filter(|_| ok)
                 .map(|d| Ok(Event::default().event("donation").data(serde_json::to_string(&*d).unwrap())))
         });
-    Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
+    Ok(Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15))))
 }
 
 async fn test_alert(State(state): State<AppState>, user: auth::AuthUser) -> Json<HashMap<&'static str, bool>> {
@@ -404,6 +417,9 @@ async fn main() {
         donate_limiter: Arc::new(rate_limit::RateLimiter::default()),
         auth_limiter: Arc::new(rate_limit::RateLimiter::default()),
         payment: Arc::new(payment::PaymentProvider::from_env()),
+        allow_public_overlay: std::env::var("ALLOW_PUBLIC_OVERLAY")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false),
     };
     let is_mock = state.payment.is_mock();
 
@@ -448,6 +464,7 @@ async fn main() {
         .route("/api/me/alert-sound", post(dashboard::upload_sound))
         .route("/api/me/wallet", get(dashboard::wallet))
         .route("/api/me/withdrawals", get(dashboard::list_withdrawals).post(dashboard::create_withdrawal))
+        .route("/api/me/leaderboard", get(dashboard::my_leaderboard))
         .nest_service("/uploads", ServeDir::new("uploads"))
         .route("/events", get(events))
         .merge(if is_mock { mock_pay::router() } else { Router::new() })

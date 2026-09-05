@@ -38,3 +38,26 @@ export function playSound(kind: string) {
   void ctx().resume().catch(() => {})
   setTimeout(() => (sounds[kind] ?? sounds.chime)(), 60)
 }
+
+/** อ่านข้อความไทยด้วย TTS — ไม่มี voice ในเครื่อง → เล่นแตรวงแทน */
+export function speakThai(text: string, speed = 1.0) {
+  const voices = speechSynthesis.getVoices()
+  if (voices.length === 0) {
+    console.warn('[Donate Me] ไม่พบ voice TTS ในเครื่อง — เล่นเสียงแตรวงแทน (ติดตั้งภาษาไทยใน OS เพื่อใช้ TTS)')
+    sounds.fanfare()
+    return
+  }
+  const u = new SpeechSynthesisUtterance(text)
+  u.lang = 'th-TH'
+  u.rate = speed
+  const th = voices.find((v) => v.lang.startsWith('th'))
+  if (th) u.voice = th
+  speechSynthesis.cancel()
+  speechSynthesis.speak(u)
+}
+
+/** ลำดับป็อบอัพโหมด TTS: กระดิ่งนำ → เสียงอ่านตามหลัง 1.4 วิ */
+export function playTtsSequence(text: string, speed = 1.0, voiceDelayMs = 1400) {
+  playSound('chime')
+  setTimeout(() => speakThai(text, speed), voiceDelayMs)
+}

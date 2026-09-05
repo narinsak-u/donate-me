@@ -47,34 +47,44 @@ pub struct AuthUser {
     pub user_id: String,
 }
 
+/// อ่าน JWT จาก Authorization header หรือ ?token= (EventSource ใส่ header ไม่ได้)
+fn extract_token(parts: &Parts) -> Option<String> {
+    parts
+        .headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .map(str::to_owned)
+        .or_else(|| {
+            let q = parts.uri.query()?;
+            q.split('&').find_map(|kv| {
+                let (k, v) = kv.split_once('=')?;
+                (k == "token").then(|| urldecode(v))
+            })
+        })
+}
+
+fn decode_user_id(token: &str, state: &AppState) -> Option<String> {
+    decode::<Claims>(
+        token,
+        &DecodingKey::from_secret(jwt_secret(state).as_bytes()),
+        &Validation::default(),
+    )
+    .ok()
+    .map(|c| c.claims.sub)
+}
+
 impl FromRequestParts<AppState> for AuthUser {
     type Rejection = (StatusCode, &'static str);
 
     async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Self::Rejection> {
-        // ปกติอ่านจาก Authorization header; EventSource (SSE) ใส่ header ไม่ได้ จึงรองรับ ?token= ด้วย
-        let token = parts
-            .headers
-            .get(axum::http::header::AUTHORIZATION)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.strip_prefix("Bearer "))
-            .map(str::to_owned)
-            .or_else(|| {
-                let q = parts.uri.query()?;
-                q.split('&').find_map(|kv| {
-                    let (k, v) = kv.split_once('=')?;
-                    (k == "token").then(|| urldecode(v))
-                })
-            })
+        let token = extract_token(parts)
             .ok_or((StatusCode::UNAUTHORIZED, "ต้องล็อกอินก่อน (missing bearer token)"))?;
 
-        let claims = decode::<Claims>(
-            &token,
-            &DecodingKey::from_secret(jwt_secret(state).as_bytes()),
-            &Validation::default(),
-        )
-        .map_err(|_| (StatusCode::UNAUTHORIZED, "token ไม่ถูกต้องหรือหมดอายุ"))?;
+        let user_id = decode_user_id(&token, state)
+            .ok_or((StatusCode::UNAUTHORIZED, "token ไม่ถูกต้องหรือหมดอายุ"))?;
 
-        Ok(AuthUser { user_id: claims.claims.sub })
+        Ok(AuthUser { user_id })
     }
 }
 
@@ -88,30 +98,7 @@ impl FromRequestParts<AppState> for MaybeAuthUser {
     type Rejection = std::convert::Infallible;
 
     async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Self::Rejection> {
-        let token = parts
-            .headers
-            .get(axum::http::header::AUTHORIZATION)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.strip_prefix("Bearer "))
-            .map(str::to_owned)
-            .or_else(|| {
-                let q = parts.uri.query()?;
-                q.split('&').find_map(|kv| {
-                    let (k, v) = kv.split_once('=')?;
-                    (k == "token").then(|| urldecode(v))
-                })
-            });
-
-        let user_id = token.and_then(|t| {
-            decode::<Claims>(
-                &t,
-                &DecodingKey::from_secret(jwt_secret(state).as_bytes()),
-                &Validation::default(),
-            )
-            .ok()
-            .map(|c| c.claims.sub)
-        });
-
+        let user_id = extract_token(parts).and_then(|t| decode_user_id(&t, state));
         Ok(MaybeAuthUser { user_id })
     }
 }
