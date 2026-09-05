@@ -63,16 +63,17 @@ const goalPct = computed(() =>
 .bar {
   width: 100%;
   max-width: 14px;
-  background: linear-gradient(180deg, #7873f5, #ff6ec7);
+  background: linear-gradient(180deg, #f43f5e, rgba(244, 63, 94, 0.35));
   border-radius: 4px 4px 0 0;
   transition: height 0.3s;
 }
 .bar.today {
-  background: linear-gradient(180deg, #ffe066, #ff6ec7);
+  background: linear-gradient(180deg, #fbbf24, #f43f5e);
+  box-shadow: 0 0 12px rgba(244, 63, 94, 0.5);
 }
 .day {
   font-size: 9px;
-  opacity: 0.4;
+  color: var(--text-faint, #64748b);
   margin-top: 4px;
 }
 .goal {
@@ -81,18 +82,18 @@ const goalPct = computed(() =>
 .goal-bar {
   height: 12px;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.3);
+  background: var(--border, rgba(148, 163, 184, 0.2));
   overflow: hidden;
 }
 .goal-fill {
   height: 100%;
-  background: linear-gradient(90deg, #22c55e, #ffe066);
+  background: linear-gradient(90deg, #f43f5e, #fbbf24);
   border-radius: 999px;
   transition: width 0.5s;
 }
 .goal-text {
   font-size: 12px;
-  opacity: 0.7;
+  color: var(--text-dim, #94a3b8);
   margin-top: 6px;
   display: block;
 }

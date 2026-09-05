@@ -10,6 +10,8 @@ const user = ref<PublicUser | null>(getUser())
 const tab = ref<'overview' | 'donations' | 'settings'>('overview')
 const donateLink = ref('')
 const copied = ref(false)
+const overlayUrl = ref('')
+const obsCopied = ref(false)
 
 const stats = ref<Stats | null>(null)
 const items = ref<DonationItem[]>([])
@@ -26,7 +28,10 @@ onMounted(async () => {
     router.push('/auth')
     return
   }
-  if (user.value) donateLink.value = `${location.origin}/?u=${user.value.username}`
+  if (user.value) {
+    donateLink.value = `${location.origin}/?u=${user.value.username}`
+    overlayUrl.value = `${location.origin}/overlay.html?token=${getToken() ?? ''}`
+  }
   const [s, st] = await Promise.all([dashApi.stats(), api.getSettings()])
   stats.value = s
   settings.value = st
@@ -43,6 +48,12 @@ function copyLink() {
   navigator.clipboard.writeText(donateLink.value)
   copied.value = true
   setTimeout(() => (copied.value = false), 2000)
+}
+
+function copyOverlayUrl() {
+  navigator.clipboard.writeText(overlayUrl.value)
+  obsCopied.value = true
+  setTimeout(() => (obsCopied.value = false), 2000)
 }
 
 async function toggleHidden(item: DonationItem) {
@@ -298,6 +309,23 @@ const themeOptions = [
 
         <!-- ===== Settings ===== -->
         <template v-if="tab === 'settings' && settings">
+          <section class="card">
+            <div class="card-head">
+              <h2>📺 OBS Browser Source Integration</h2>
+              <span class="badge badge-green">1920×1080 · 60fps</span>
+            </div>
+            <div class="obs-url-row">
+              <code class="obs-url">{{ overlayUrl }}</code>
+              <button class="btn-primary" @click="copyOverlayUrl">{{ obsCopied ? '✓ คัดลอกแล้ว' : '⧉ คัดลอก URL สำหรับ OBS' }}</button>
+            </div>
+            <div class="steps-3">
+              <div class="step"><b>Step 1</b><span>เพิ่ม Browser Source ใน OBS Studio</span></div>
+              <div class="step"><b>Step 2</b><span>วาง URL ข้างบน ตั้งขนาด 1920×1080</span></div>
+              <div class="step"><b>Step 3</b><span>กดทดสอบ Alert แล้วดูผลในฉากจริง</span></div>
+            </div>
+            <p class="muted small" style="margin-top: 10px">🔒 อย่าแชร์ URL นี้กับคนอื่น — token ผูกกับบัญชีของคุณ (หมดอายุ 7 วัน ล็อกอินใหม่เพื่อรีเฟรช)</p>
+          </section>
+
           <section class="card">
             <div class="card-head">
               <h2>🎨 Theme & Visual Styling</h2>
@@ -602,6 +630,26 @@ td.hidden { color: var(--text-faint); font-style: italic; }
 .save-row { display: flex; gap: 10px; margin-top: 20px; align-items: center; flex-wrap: wrap; }
 .ghost-link { color: #a5b4fc; font-size: 13.5px; }
 code { background: var(--bg-card-2); padding: 1px 6px; border-radius: 5px; font-size: 11.5px; color: var(--primary); }
+
+/* obs url card */
+.obs-url-row { display: flex; gap: 10px; align-items: stretch; }
+.obs-url {
+  flex: 1; display: flex; align-items: center;
+  background: var(--bg-input); border: 1px solid var(--border);
+  padding: 12px 14px; border-radius: var(--radius-md);
+  font-size: 12.5px; color: var(--text-dim); word-break: break-all;
+}
+.steps-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; }
+.step {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 13px; border-radius: var(--radius-md);
+  background: var(--bg-card-2); border: 1px solid var(--border);
+  font-size: 12px; color: var(--text-dim);
+}
+.step b {
+  padding: 3px 9px; border-radius: 7px; font-size: 10.5px; white-space: nowrap;
+  background: var(--emerald-soft); color: var(--emerald);
+}
 
 @media (max-width: 1000px) {
   .sidebar { display: none; }
