@@ -1,10 +1,11 @@
 // Overlay สำหรับ OBS Browser Source — standalone ไม่ผ่าน SPA router
 // ใช้: /overlay.html?token=<JWT> — แสดงเฉพาะโดเนตของสตรีมเมอร์ที่ถือ token นั้น
+// ⚠️ ไม่ดึง token จาก localStorage (แท็บอื่นล็อกอินค้างจะทำให้ฟัง user ผิด)
+//    แบบไม่ใส่ token = ฟังโดเนตของ streamer เริ่มต้น (โหมดใช้คนเดียว)
 
-import { api, getToken, type DonationEvent, type Settings } from '../api/auth'
+import { api, type DonationEvent, type Settings } from '../api/auth'
 
-const params = new URLSearchParams(location.search)
-const token = params.get('token') || getToken() || ''
+const token = new URLSearchParams(location.search).get('token') ?? ''
 
 // ---------- DOM ----------
 const root = document.getElementById('app')!
