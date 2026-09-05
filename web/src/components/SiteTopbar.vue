@@ -1,15 +1,26 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { currentTheme, toggleTheme } from '../theme'
 
 // Topbar กลางของทุกหน้า — โลโก้กดแล้วกลับหน้าหลักเสมอ
-// full = หน้าโดเนต (มีเมนู + เข้าร่วม + ME), compact = หน้าย่อย (โลโก้ + สลับธีม)
+// full = หน้าสาธารณะ (มีเมนู + เข้าร่วม + ME), compact = หน้าย่อย (โลโก้ + สลับธีม)
 defineProps<{ full?: boolean }>()
 const router = useRouter()
+const route = useRoute()
 const theme = ref(currentTheme())
 function onToggle() {
   theme.value = toggleTheme()
+}
+
+const isHome = computed(() => route.path === '/')
+
+// เมนู "จุดรับโดเนต" — ไปหน้าแรกแล้วเลื่อนถึงรายชื่อสตรีมเมอร์
+async function goDonateSpot() {
+  if (route.path !== '/') await router.push('/')
+  requestAnimationFrame(() =>
+    document.getElementById('streamers')?.scrollIntoView({ behavior: 'smooth' }),
+  )
 }
 </script>
 
@@ -22,9 +33,9 @@ function onToggle() {
     </div>
 
     <nav v-if="full" class="topnav">
-      <a href="/#/" class="active">หน้าแรก</a>
-      <a href="#">คู่มือสตรีมเมอร์</a>
-      <a href="#" class="pill">จุดรับโดเนต</a>
+      <a href="/#/" :class="{ active: isHome }">หน้าแรก</a>
+      <a href="/#/dashboard?tab=settings" :class="{ active: route.path === '/dashboard' }">คู่มือสตรีมเมอร์</a>
+      <button type="button" class="nav-btn" @click="goDonateSpot">จุดรับโดเนต</button>
     </nav>
 
     <div class="topbar-right">
@@ -91,8 +102,24 @@ function onToggle() {
   color: var(--primary);
   background: var(--primary-soft);
 }
-.topnav a.pill {
+.topnav a.pill,
+.nav-btn {
   border: 1px solid var(--border-bright);
+}
+.nav-btn {
+  padding: 8px 15px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 600;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.nav-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
 }
 .topbar-right {
   display: flex;

@@ -55,7 +55,7 @@ function pctOf(s: StreamerSummary): number {
       <p v-else-if="loading" class="muted loading">กำลังโหลดรายชื่อ...</p>
 
       <!-- ===== รายชื่อสตรีมเมอร์ ===== -->
-      <section v-else-if="filtered.length" class="grid">
+      <section id="streamers" v-else-if="filtered.length" class="grid">
         <button
           v-for="s in filtered"
           :key="s.username"

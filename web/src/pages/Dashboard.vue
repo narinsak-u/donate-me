@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { api, getToken, getUser, type PublicUser, type Settings } from '../api/auth'
 import { dashApi, type DonationItem, type Stats } from '../api/dashboard'
 import { applyTheme } from '../theme'
@@ -8,6 +8,7 @@ import DonationChart from '../components/DonationChart.vue'
 import WalletTab from '../components/WalletTab.vue'
 
 const router = useRouter()
+const route = useRoute()
 const user = ref<PublicUser | null>(getUser())
 const tab = ref<'overview' | 'donations' | 'settings' | 'wallet'>('overview')
 const donateLink = ref('')
@@ -28,6 +29,11 @@ const soundUrl = ref('')
 
 onMounted(async () => {
   applyTheme()
+  // เปิดแท็บตาม ?tab= (เช่น ลิงก์ "คู่มือสตรีมเมอร์" → ?tab=settings)
+  const q = route.query.tab
+  if (typeof q === 'string' && ['overview', 'donations', 'settings', 'wallet'].includes(q)) {
+    tab.value = q as typeof tab.value
+  }
   if (!getToken()) {
     router.push('/auth')
     return
