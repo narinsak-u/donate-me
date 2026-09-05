@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, type DonationStatusResponse } from '../api/auth'
 import { playSound } from '../sounds'
+import { burstConfetti } from '../confetti'
 
 const props = defineProps<{ id: string }>()
 const route = useRoute()
@@ -27,8 +28,11 @@ onMounted(() => {
       status.value = res.status
       if (res.status !== 'pending') {
         clearInterval(timer)
-        // จ่ายสำเร็จ → เล่นเสียงเดียวกับ alert ในแท็บนี้ด้วย (ให้ผู้โดเนตได้ยินทันทีตอนทดสอบ)
-        if (res.status === 'paid') playSound(soundKind)
+        // จ่ายสำเร็จ → เสียง + คอนเฟตติเฉลิมฉลองในแท็บนี้ด้วย
+        if (res.status === 'paid') {
+          playSound(soundKind)
+          burstConfetti(80)
+        }
         setTimeout(() => router.push('/'), 8000)
       }
     } catch {
