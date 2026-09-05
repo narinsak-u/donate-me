@@ -37,11 +37,9 @@ const targetUsername =
   new URLSearchParams(location.search).get('u') || (route.query.u as string) || undefined
 
 // theme toggle (dark = Minimal & Friendly, light = Clean Light Mode) — ใช้ theme.ts กลาง
-import { applyTheme, toggleTheme } from '../theme'
-const theme = ref(localStorage.getItem('donateme_theme') ?? 'dark')
-function onToggleTheme() {
-  theme.value = toggleTheme()
-}
+import { applyTheme } from '../theme'
+import SiteTopbar from '../components/SiteTopbar.vue'
+
 onMounted(() => {
   applyTheme(theme.value as "dark" | "light")
   if (targetUsername) {
@@ -127,19 +125,7 @@ async function submit() {
 <template>
   <div class="page">
     <!-- ===== Header ===== -->
-    <header class="topbar">
-      <div class="logo"><span class="logo-icon">❤️</span> <b>Donate Me</b><span class="logo-heart">❤️</span></div>
-      <nav class="topnav">
-        <a href="#" class="active">หน้าแรก</a>
-        <a href="#">คู่มือสตรีมเมอร์</a>
-        <a href="#" class="pill">จุดรับโดเนต</a>
-      </nav>
-      <div class="topbar-right">
-        <button class="theme-toggle" title="สลับธีม" @click="onToggleTheme">{{ theme === 'dark' ? '☀️' : '🌙' }}</button>
-        <a href="/#/dashboard" class="join-btn">เข้าร่วม</a>
-        <div class="me-avatar">ME</div>
-      </div>
-    </header>
+    <SiteTopbar full />
 
     <main class="wrap">
       <!-- ===== Streamer hero ===== -->
@@ -325,39 +311,6 @@ async function submit() {
 
 <style scoped>
 .page { min-height: 100vh; background: var(--bg); }
-.topbar {
-  position: sticky; top: 0; z-index: 10;
-  display: flex; align-items: center; gap: 28px;
-  padding: 12px 32px;
-  background: color-mix(in srgb, var(--bg) 85%, transparent);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--border);
-}
-.logo { display: flex; align-items: center; gap: 7px; font-family: var(--font-head); font-size: 17px; }
-.logo-icon {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 34px; height: 34px; border-radius: 11px; font-size: 16px;
-  background: var(--primary-soft);
-}
-.logo-heart { font-size: 11px; }
-.topnav { display: flex; gap: 6px; flex: 1; }
-.topnav a {
-  padding: 8px 15px; border-radius: 999px; font-size: 13.5px; font-weight: 600;
-  color: var(--text-dim); text-decoration: none;
-}
-.topnav a.active { color: var(--primary); background: var(--primary-soft); }
-.topnav a.pill { border: 1px solid var(--border-bright); }
-.topbar-right { display: flex; align-items: center; gap: 12px; }
-.join-btn {
-  padding: 9px 20px; border-radius: 999px; border: 1px solid var(--border-bright);
-  color: var(--text); font-size: 13.5px; font-weight: 700; text-decoration: none;
-}
-.me-avatar {
-  width: 36px; height: 36px; border-radius: 50%;
-  background: linear-gradient(135deg, var(--primary), #fb7185);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 11px; font-weight: 800; color: #fff;
-}
 .wrap { max-width: 1180px; margin: 0 auto; padding: 24px 28px 40px; display: grid; gap: 22px; }
 
 /* hero */
@@ -555,12 +508,7 @@ textarea { resize: vertical; }
   .hero { flex-direction: column; }
 }
 @media (max-width: 640px) {
-  .topbar { flex-wrap: wrap; gap: 10px; padding: 10px 14px; }
-  .logo { flex: 1; }
-  .topnav { order: 3; width: 100%; overflow-x: auto; }
-  .topnav a { white-space: nowrap; padding: 7px 12px; font-size: 12.5px; }
-  .join-btn { padding: 7px 14px; font-size: 12.5px; }
-  .wrap { padding: 16px 14px 32px; }
+            .wrap { padding: 16px 14px 32px; }
   .card { padding: 20px 16px; }
   .hero { padding: 18px; }
   .avatar { margin-top: -50px; width: 76px; height: 76px; font-size: 32px; }

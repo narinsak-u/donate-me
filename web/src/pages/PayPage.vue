@@ -5,6 +5,7 @@ import { api, type DonationStatusResponse } from '../api/auth'
 import { playSound } from '../sounds'
 import { burstConfetti } from '../confetti'
 import { applyTheme } from '../theme'
+import SiteTopbar from '../components/SiteTopbar.vue'
 
 const props = defineProps<{ id: string }>()
 const route = useRoute()
@@ -76,6 +77,8 @@ const countdown = computed(() => {
 
 <template>
   <div class="page">
+    <SiteTopbar />
+    <div class="page-body">
     <!-- กำลังรอชำระเงิน -->
     <div v-if="status === null || status === 'pending'" class="layout">
       <div class="card form-card">
@@ -140,6 +143,7 @@ const countdown = computed(() => {
         <button class="btn-primary" @click="router.push('/')">← กลับไปโดเนตใหม่</button>
       </div>
     </div>
+    </div>
   </div>
 </template>
 
@@ -147,6 +151,7 @@ const countdown = computed(() => {
 .page { min-height: 100vh; background: var(--bg); display: flex; align-items: flex-start; justify-content: center; padding: 40px 20px; }
 .layout { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; width: 100%; max-width: 900px; align-items: start; }
 .single { width: 100%; max-width: 480px; }
+.page-body .layout, .page-body .single { display: grid; }
 .card {
   background: var(--bg-card); border: 1px solid var(--border);
   border-radius: var(--radius-xl); padding: 26px; box-shadow: var(--shadow-card);

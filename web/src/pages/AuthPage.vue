@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { authApi } from '../api/auth'
 import { applyTheme } from '../theme'
+import SiteTopbar from '../components/SiteTopbar.vue'
 
 const router = useRouter()
 const mode = ref<'login' | 'register'>('login')
@@ -40,7 +41,9 @@ async function submit() {
 
 <template>
   <div class="page">
-    <div class="card">
+    <SiteTopbar />
+    <div class="page-body">
+      <div class="card">
       <div class="avatar">💜</div>
       <h1>{{ mode === 'login' ? 'เข้าสู่ระบบ' : 'สมัครสมาชิก' }}</h1>
       <p class="subtitle">Creator Studio — ระบบโดเนตสำหรับสตรีมเมอร์</p>
@@ -71,6 +74,7 @@ async function submit() {
         </a>
       </p>
     </div>
+    </div>
   </div>
 </template>
 
@@ -78,10 +82,15 @@ async function submit() {
 .page {
   min-height: 100vh;
   display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+.page-body {
+  flex: 1;
+  display: flex;
   align-items: center;
   justify-content: center;
   padding: 20px;
-  background: var(--bg);
 }
 .card {
   width: 100%;

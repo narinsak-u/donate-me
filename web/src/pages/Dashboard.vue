@@ -163,7 +163,7 @@ const themeOptions = [
   <div class="shell">
     <!-- ===== Sidebar ===== -->
     <aside class="sidebar">
-      <div class="side-logo">
+      <div class="side-logo" role="link" title="กลับหน้าหลัก" @click="router.push('/')">
         <div class="side-logo-icon">❤️</div>
         <div>
           <b>Donate Me</b>
@@ -497,7 +497,8 @@ const themeOptions = [
   background: var(--bg-card);
   position: sticky; top: 0; height: 100vh;
 }
-.side-logo { display: flex; align-items: center; gap: 11px; padding: 4px 8px; }
+.side-logo { display: flex; align-items: center; gap: 11px; padding: 4px 8px; cursor: pointer; user-select: none; }
+.side-logo:hover b { color: var(--primary); }
 .side-logo-icon {
   width: 40px; height: 40px; border-radius: 13px; font-size: 18px;
   background: linear-gradient(135deg, #fb7185, var(--primary));
