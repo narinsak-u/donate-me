@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, type DonationStatusResponse } from '../api/auth'
+import { playSound } from '../sounds'
 
 const props = defineProps<{ id: string }>()
 const route = useRoute()
@@ -10,6 +11,7 @@ const router = useRouter()
 const qrUrl = computed(() => (route.query.qr as string) || '')
 const payUrl = computed(() => (route.query.pay as string) || '')
 const amount = computed(() => Number(route.query.amount ?? 0))
+const soundKind = (route.query.sound as string) || 'chime'
 const status = ref<DonationStatusResponse['status'] | null>(null)
 let timer: ReturnType<typeof setInterval> | undefined
 
@@ -25,6 +27,8 @@ onMounted(() => {
       status.value = res.status
       if (res.status !== 'pending') {
         clearInterval(timer)
+        // จ่ายสำเร็จ → เล่นเสียงเดียวกับ alert ในแท็บนี้ด้วย (ให้ผู้โดเนตได้ยินทันทีตอนทดสอบ)
+        if (res.status === 'paid') playSound(soundKind)
         setTimeout(() => router.push('/'), 8000)
       }
     } catch {

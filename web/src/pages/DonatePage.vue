@@ -64,7 +64,10 @@ async function submit() {
       sound: sound.value,
       username: targetUsername,
     })
-    router.push({ path: `/pay/${res.id}`, query: { qr: res.qr_url, pay: res.pay_url, amount: String(amount.value) } })
+    router.push({
+      path: `/pay/${res.id}`,
+      query: { qr: res.qr_url, pay: res.pay_url, amount: String(amount.value), sound: sound.value },
+    })
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'เกิดข้อผิดพลาด'
   } finally {
