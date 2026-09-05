@@ -227,7 +227,7 @@ curl -X POST http://localhost:3000/api/test-alert -H "Authorization: Bearer <tok
 | อาการ | วิธีแก้ |
 |---|---|
 | เปิดเว็บไม่ได้ / 404 | ต้อง `bun run build` ใน `web/` ก่อน (Axum serve จาก `web/dist`) |
-| ป็อบอัพไม่เด้ง | เช็คว่า overlay ใช้ token ของสตรีมเมอร์คนนั้น (`/overlay.html?token=...`), เปิด console ใน OBS ดูว่า SSE เชื่อมต่อ |
+| ป็อบอัพไม่เด้ง | ต้องเปิด **`/overlay.html` แยกต่างหาก** (แท็บแยกหรือ OBS) — ป็อบอัพแสดงบนหน้า overlay เท่านั้น ไม่ได้แสดงบนหน้าโดเนต; และเช็คว่า overlay ใช้ token ของสตรีมเมอร์คนนั้น (`/overlay.html?token=...`) — แบบไม่ใส่ token จะได้เฉพาะโดเนตของ streamer เริ่มต้น |
 | เสียงไม่ดังครั้งแรก | Browser ต้องมี interaction ก่อนเล่นเสียง — ใน OBS ตั้ง "Refresh browser when scene becomes active" หรือกด test alert ก่อนไลฟ์ |
 | `429 Too Many Requests` | โดน rate limit — รอ 1 นาที (dev: รีสตาร์ท server เพื่อเคลียร์) |
 | QR หมดอายุ | PromptPay QR อายุ 15 นาที — โดเนตใหม่ได้เลย |
