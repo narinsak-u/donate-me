@@ -18,6 +18,24 @@ let timer: ReturnType<typeof setInterval> | undefined
 
 const secondsLeft = ref(15 * 60)
 
+// เสียงพูดขอบคุณ (โหมด tts) — ลำดับเดียวกับ overlay: กระดิ่งนำ → เสียงอ่านตาม
+function speakThanks() {
+  const name = (route.query.name as string) || 'ผู้สนับสนุน'
+  const text = `ขอบคุณ ${name} ที่โดเนต ${amount.value.toLocaleString()} บาท`
+  const voices = speechSynthesis.getVoices()
+  if (voices.length === 0) {
+    // เครื่องไม่มี TTS voice — เล่นเสียงแตรวงแทน
+    playSound('fanfare')
+    return
+  }
+  const u = new SpeechSynthesisUtterance(text)
+  u.lang = 'th-TH'
+  const th = voices.find((v) => v.lang.startsWith('th'))
+  if (th) u.voice = th
+  speechSynthesis.cancel()
+  speechSynthesis.speak(u)
+}
+
 onMounted(() => {
   const t = localStorage.getItem('donateme_theme') ?? 'dark'
   document.documentElement.setAttribute('data-theme', t)
@@ -27,11 +45,16 @@ onMounted(() => {
       const res = await api.getDonation(props.id)
       status.value = res.status
       if (res.status !== 'pending') {
-        clearInterval(timer)        // จ่ายสำเร็จ → เสียง + คอนเฟตติเฉลิมฉลองในแท็บนี้ด้วย
-        // หมายเหตุ: โหมด tts ไม่เล่นกระดิ่งซ้ำ — ลำดับ กระดิ่ง→เสียงอ่าน ให้ overlay จัดการ
-        // (polling ตรวจได้ช้า-เร็วไม่แน่นอน กระดิ่งซ้ำจะไปทับเสียงอ่านของ overlay)
+        clearInterval(timer)
+        // จ่ายสำเร็จ → เสียง + คอนเฟตติเฉลิมฉลองในแท็บนี้ด้วย
         if (res.status === 'paid') {
-          if (soundKind !== 'tts') playSound(soundKind)
+          if (soundKind === 'tts') {
+            // กระดิ่งนำก่อน แล้วค่อยตามด้วยเสียงพูดขอบคุณ
+            playSound('chime')
+            setTimeout(speakThanks, 1400)
+          } else {
+            playSound(soundKind)
+          }
           burstConfetti(80)
         }
         setTimeout(() => router.push('/'), 8000)

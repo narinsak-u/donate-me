@@ -109,7 +109,13 @@ async function submit() {
     })
     router.push({
       path: `/pay/${res.id}`,
-      query: { qr: res.qr_url, pay: res.pay_url, amount: String(amount.value), sound: sound.value },
+      query: {
+        qr: res.qr_url,
+        pay: res.pay_url,
+        amount: String(amount.value),
+        sound: sound.value,
+        name: anonymous.value ? 'ไม่ระบุชื่อ' : name.value,
+      },
     })
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'เกิดข้อผิดพลาด'
