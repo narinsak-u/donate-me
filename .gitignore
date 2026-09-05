@@ -1,0 +1,18 @@
+# Rust
+server/target/
+
+# runtime data
+*.db
+*.db-shm
+*.db-wal
+uploads/
+
+# secrets
+.env
+
+# frontend
+web/node_modules/
+web/dist/
+
+# misc
+*.log

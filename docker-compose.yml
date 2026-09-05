@@ -1,0 +1,34 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: sqlite://data/donations.db?mode=rwc
+      JWT_SECRET: ${JWT_SECRET:?ต้องตั้ง JWT_SECRET ใน .env}
+      MOCK_WEBHOOK_SECRET: ${MOCK_WEBHOOK_SECRET:-mock-secret-change-me}
+      RUST_LOG: info
+    volumes:
+      - app-data:/app/data
+      - app-uploads:/app/uploads
+    expose:
+      - "3000"
+
+  # reverse proxy + HTTPS อัตโนมัติ (แก้ donation.example.com เป็นโดเมนจริง)
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - app
+
+volumes:
+  app-data:
+  app-uploads:
+  caddy-data:
+  caddy-config:

@@ -1,0 +1,9 @@
+# แก้โดเมนแล้ว Caddy ออกใบ cert ให้เอง (HTTPS อัตโนมัติ)
+donation.example.com {
+	reverse_proxy app:3000
+}
+
+# โหมด dev ภายในเครื่อง: ใช้ :80 แทน
+# :80 {
+# 	reverse_proxy app:3000
+# }
