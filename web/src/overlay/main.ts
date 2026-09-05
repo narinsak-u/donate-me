@@ -158,6 +158,13 @@ function showUnmuteIfNeeded() {
 }
 showUnmuteIfNeeded()
 ctx().addEventListener?.('statechange', showUnmuteIfNeeded)
+// กลับมาที่แท็บ = ลองปลุกเสียงทันที (browser มัก suspend ตอนแท็บถูกซ่อน)
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    void ctx().resume().catch(() => {})
+    showUnmuteIfNeeded()
+  }
+})
 
 function tone(freq: number, start: number, dur: number, type: OscillatorType = 'sine', vol = 0.3) {
   const c = ctx()
@@ -212,6 +219,8 @@ let hideTimer: ReturnType<typeof setTimeout> | undefined
 
 function showAlert(d: DonationEvent) {
   clearTimeout(hideTimer)
+  // ปลุก AudioContext ก่อนเล่นเสียงเสมอ — browser มัก suspend เสียงแท็บที่เพิ่งกลับมา
+  void ctx().resume().catch(() => {})
   // กัน XSS: ใช้ textContent เท่านั้น ห้าม innerHTML กับข้อมูลจากผู้ใช้
   const tier = tierOf(d.amount)
   elName.textContent = d.donor_name
@@ -241,7 +250,8 @@ function showAlert(d: DonationEvent) {
     const audio = new Audio(settings.alert_sound_url)
     void audio.play().catch(() => (sounds[d.sound] ?? sounds.chime)())
   } else {
-    ;(sounds[d.sound] ?? sounds.chime)()
+    // หน่วงนิดเดียวให้ resume() เสร็จก่อน — ไม่งั้น oscillator อาจถูกตัดตอน ctx ยัง suspended
+    setTimeout(() => (sounds[d.sound] ?? sounds.chime)(), 60)
   }
 
   hideTimer = setTimeout(() => {
