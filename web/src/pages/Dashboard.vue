@@ -207,15 +207,13 @@ async function save() {
   if (!settings.value) return
   try {
     settings.value = await api.updateSettings(settings.value)
-    previewKey.value++ // รีเฟรชพรีวิวหน้าโดเนต
     alert('บันทึกแล้ว!')
   } catch (e) {
     alert(e instanceof Error ? e.message : 'บันทึกไม่สำเร็จ')
   }
 }
 
-// Phase 9: ธีมหน้าโดเนต + คีย์รีเฟรชพรีวิว
-const previewKey = ref(0)
+// Phase 9: ธีมหน้าโดเนต
 const pageThemes = [
   { value: 'rose', label: 'Rose (เดิม)', desc: 'ชมพู Stitch', color: '#f43f5e' },
   { value: 'mint', label: 'Mint', desc: 'เขียวสดใส', color: '#10b981' },
@@ -802,16 +800,9 @@ const themeOptions = [
               <div><label>𝕏 (Twitter)</label><input v-model="settings.social_x" class="input" placeholder="https://x.com/ชื่อคุณ" /></div>
             </div>
 
-            <div class="preview-shell" style="margin-top: 16px">
-              <div class="preview-head">🔍 พรีวิวหน้าโดเนต (กดบันทึกแล้วรีเฟรช)</div>
-              <iframe
-                v-if="donateLink"
-                :key="previewKey"
-                :src="`${donateLink}?preview=1`"
-                class="preview-frame"
-                title="พรีวิวหน้าโดเนต"
-              />
-            </div>
+            <p class="muted small" style="margin-top: 14px">
+              💡 ดูผลจริงได้ที่ลิงก์หน้าโดเนตของคุณ: <a :href="donateLink" target="_blank" rel="noopener" style="color: var(--primary)">{{ donateLink }} ↗</a>
+            </p>
           </section>
         </template>
       </main>
