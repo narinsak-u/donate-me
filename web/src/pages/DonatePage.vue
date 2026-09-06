@@ -359,7 +359,7 @@ onUnmounted(() => clearTimeout(resetTimer))
       </section>
 
       <!-- ===== Social proof: Top 5 (บน) ===== -->
-      <section v-if="topDonators.length" class="card">
+      <section v-if="topDonators.length" class="card social-card">
         <div class="card-head">
           <h2>🏆 ผู้สนับสนุนสูงสุดเดือนนี้</h2>
           <span class="muted">Top 5</span>
@@ -377,7 +377,7 @@ onUnmounted(() => clearTimeout(resetTimer))
       </section>
 
       <!-- ===== Social proof: กำลังใจล่าสุด + โหลดเพิ่ม (ล่าง) ===== -->
-      <section v-if="recent.length || profile" class="card">
+      <section v-if="recent.length || profile" class="card social-card">
         <div class="card-head">
           <h2>⚡ กำลังใจล่าสุด</h2>
           <span class="badge badge-green">● สด</span>
@@ -678,11 +678,12 @@ textarea { resize: vertical; }
 .reset-note { margin-top: 14px; }
 
 /* social proof: สอง section แนวตั้งเต็มความกว้าง (Top 5 บน / กำลังใจล่าสุด ลงล่าง) */
+.social-card { padding: 22px; }
 .board {
   list-style: none;
   display: grid;
   gap: 8px;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
 }
 .board li {
   display: flex;
@@ -763,7 +764,7 @@ textarea { resize: vertical; }
   .sound-chips { grid-template-columns: 1fr 1fr; }
   .name-row { flex-direction: column; align-items: stretch; gap: 8px; }
   .anon { margin-bottom: 0; justify-content: flex-end; }
-  .board { grid-template-columns: 1fr; }
+  .social-card { padding: 18px 14px; }
   .cta { display: none; }
   .sticky-cta {
     display: block;
