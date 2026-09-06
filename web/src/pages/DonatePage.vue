@@ -544,8 +544,9 @@ onUnmounted(() => clearTimeout(resetTimer))
 .soc-x .soc-ico { background: #1d1d1d; border: 1px solid #444; }
 
 /* ===== Phase 9: About ===== */
+.about-card { padding: 22px; }
 .about-card h2 { font-size: 16px; margin-bottom: 8px; }
-.about-text { color: var(--text-dim); font-size: 14px; line-height: 1.75; white-space: pre-line; }
+.about-text { color: var(--text-dim); font-size: 14px; line-height: 1.75; white-space: pre-line; margin: 0; }
 
 /* ===== Phase 9: ธีมหน้า (override ตัวแปรสี — rose = default เดิม) ===== */
 .ptheme-mint { --primary: #10b981; --primary-soft: rgba(16, 185, 129, 0.12); }
