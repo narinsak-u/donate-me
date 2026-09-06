@@ -1036,7 +1036,7 @@ input, select { font-family: var(--font-body); }
   background: rgba(148, 163, 184, 0.08);
   border-bottom: 1px solid rgba(148, 163, 184, 0.15);
 }
-.preview-frame { display: block; width: 100%; height: 260px; border: none; background: transparent; }
+.preview-frame { display: block; width: 100%; height: 480px; border: none; background: transparent; }
 .preview-loading { padding: 40px; text-align: center; }
 .tier {
   display: flex; align-items: center; gap: 14px; padding: 12px 14px;
