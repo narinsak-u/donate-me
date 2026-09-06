@@ -10,7 +10,7 @@ import WalletTab from '../components/WalletTab.vue'
 const router = useRouter()
 const route = useRoute()
 const user = ref<PublicUser | null>(getUser())
-const tab = ref<'overview' | 'donations' | 'slips' | 'settings' | 'wallet'>('overview')
+const tab = ref<'overview' | 'donations' | 'profile' | 'slips' | 'settings' | 'wallet'>('overview')
 const donateLink = ref('')
 const copied = ref(false)
 const overlayUrl = ref('')
@@ -114,7 +114,7 @@ onMounted(async () => {
   applyTheme()
   // เปิดแท็บตาม ?tab= (เช่น ลิงก์ "คู่มือสตรีมเมอร์" → ?tab=settings)
   const q = route.query.tab
-  if (typeof q === 'string' && ['overview', 'donations', 'slips', 'settings', 'wallet'].includes(q)) {
+  if (typeof q === 'string' && ['overview', 'donations', 'profile', 'slips', 'settings', 'wallet'].includes(q)) {
     tab.value = q as typeof tab.value
   }
   if (!getToken()) {
@@ -286,6 +286,7 @@ const goalPct = computed(() =>
 const navItems = [
   { key: 'overview', icon: '📊', label: 'ภาพรวม (Dashboard)' },
   { key: 'donations', icon: '🧾', label: 'ประวัติโดเนต' },
+  { key: 'profile', icon: '👤', label: 'ตั้งค่าโปรไฟล์' },
   { key: 'slips', icon: '🏦', label: 'ตั้งค่าบัญชี' },
   { key: 'settings', icon: '🔔', label: 'ตั้งค่าแจ้งเตือน (Alerts)' },
   { key: 'wallet', icon: '💰', label: 'กระเป๋าเงิน & ถอน' },
@@ -399,29 +400,6 @@ const themeOptions = [
               <span class="metric-foot"><em class="grow">↗ กำลังวิ่งขึ้น</em> ต่อรายการ</span>
             </div>
           </div>
-
-          <section class="goal-card">
-            <div class="goal-left">
-              <div class="goal-title-row">
-                <i class="goal-flag">🚩</i>
-                <div>
-                  <b>เป้าหมาย: อัปเกรดอุปกรณ์สตรีม</b>
-                  <span>รวบรวมทุกการสนับสนุนเพื่อเป้าหมายถัดไปของช่อง</span>
-                </div>
-                <span class="badge badge-green">กำลังดำเนินการ</span>
-              </div>
-              <div class="goal-bar"><div class="goal-fill" :style="{ width: goalPct + '%' }" /></div>
-              <div class="goal-foot">
-                <span>ปัจจุบัน: <b class="green">฿{{ stats.total_month.toLocaleString() }}</b></span>
-                <span>เป้าหมาย: <b>฿{{ stats.goal_amount.toLocaleString() }}</b></span>
-              </div>
-            </div>
-            <div class="goal-right">
-              <span class="goal-remain">ต้องการอีก</span>
-              <b>{{ goalPct }}%</b>
-              <span class="muted small">จากเป้าหมาย</span>
-            </div>
-          </section>
 
           <section class="card">
             <div class="card-head">
@@ -582,6 +560,83 @@ const themeOptions = [
         <!-- ===== Wallet ===== -->
         <template v-if="tab === 'wallet'">
           <WalletTab />
+        </template>
+
+        <!-- ===== ตั้งค่าโปรไฟล์ (เป้าหมาย + หน้าโดเนตของฉัน) ===== -->
+        <template v-if="tab === 'profile' && settings && stats">
+          <section class="goal-card">
+            <div class="goal-left">
+              <div class="goal-title-row">
+                <i class="goal-flag">🚩</i>
+                <div>
+                  <b>เป้าหมาย: อัปเกรดอุปกรณ์สตรีม</b>
+                  <span>รวบรวมทุกการสนับสนุนเพื่อเป้าหมายถัดไปของช่อง</span>
+                </div>
+                <span class="badge badge-green">กำลังดำเนินการ</span>
+              </div>
+              <div class="goal-bar"><div class="goal-fill" :style="{ width: goalPct + '%' }" /></div>
+              <div class="goal-foot">
+                <span>ปัจจุบัน: <b class="green">฿{{ stats.total_month.toLocaleString() }}</b></span>
+                <span>เป้าหมาย: <b>฿{{ stats.goal_amount.toLocaleString() }}</b></span>
+              </div>
+            </div>
+            <div class="goal-right">
+              <span class="goal-remain">ต้องการอีก</span>
+              <b>{{ goalPct }}%</b>
+              <span class="muted small">จากเป้าหมาย</span>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card-head">
+              <h2>✏️ แก้ยอดเป้าหมาย</h2>
+            </div>
+            <label>ยอดเป้าหมาย (บาท) — ขึ้นบนหน้าโดเนตและ overlay ทันทีหลังบันทึก</label>
+            <input v-model.number="settings.goal_amount" class="input" type="number" min="0" style="max-width: 220px" />
+            <div class="save-row" style="margin-top: 12px">
+              <button class="btn-primary" @click="save">💾 บันทึก</button>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card-head">
+              <h2>🎨 หน้าโดเนตของฉัน</h2>
+              <span class="badge badge-pink">เห็นผลทันที →</span>
+            </div>
+            <label>ธีมหน้า (PAGE THEME)</label>
+            <div class="palettes">
+              <button
+                v-for="t in pageThemes"
+                :key="t.value"
+                class="palette"
+                :class="{ active: settings.page_theme === t.value }"
+                @click="settings.page_theme = t.value"
+              >
+                <i class="swatch" :style="{ background: t.color }" />
+                <b>{{ t.label }}</b>
+                <span>{{ t.desc }}</span>
+              </button>
+            </div>
+
+            <label>รูปปกหน้าโดเนต (URL https — เว้นว่าง = ใช้พื้นหลังเดิม)</label>
+            <input v-model="settings.cover_url" class="input" placeholder="https://images.example.com/banner.jpg" />
+
+            <label>เกี่ยวกับฉัน (แสดงใต้ปก — ไม่เกิน 400 ตัวอักษร)</label>
+            <textarea v-model="settings.about_text" class="input" rows="3" maxlength="400" placeholder="สวัสดีครับ ผมสตรีมเกม ทุกคืน 20:00 💜" />
+
+            <label>ลิงก์โซเชียล (https — เว้นว่างช่องไหน = ไม่แสดง)</label>
+            <div class="tts-opts">
+              <div><label>f Facebook</label><input v-model="settings.social_facebook" class="input" placeholder="https://facebook.com/ชื่อคุณ" /></div>
+              <div><label>▶ YouTube</label><input v-model="settings.social_youtube" class="input" placeholder="https://youtube.com/@ชื่อคุณ" /></div>
+              <div><label>🎮 Twitch</label><input v-model="settings.social_twitch" class="input" placeholder="https://twitch.tv/ชื่อคุณ" /></div>
+              <div><label>♪ TikTok</label><input v-model="settings.social_tiktok" class="input" placeholder="https://tiktok.com/@ชื่อคุณ" /></div>
+              <div><label>𝕏 (Twitter)</label><input v-model="settings.social_x" class="input" placeholder="https://x.com/ชื่อคุณ" /></div>
+            </div>
+
+            <p class="muted small" style="margin-top: 14px">
+              💡 ดูผลจริงได้ที่ลิงก์หน้าโดเนตของคุณ: <a :href="donateLink" target="_blank" rel="noopener" style="color: var(--primary)">{{ donateLink }} ↗</a>
+            </p>
+          </section>
         </template>
 
         <!-- ===== Settings ===== -->
@@ -755,9 +810,7 @@ const themeOptions = [
             <div class="card-head">
               <h2>⚙️ อื่น ๆ</h2>
             </div>
-            <label>เป้าหมายยอดโดเนต (บาท)</label>
-            <input v-model.number="settings.goal_amount" class="input" type="number" min="0" />
-            <label class="check" style="margin-top: 14px">
+            <label class="check">
               <input v-model="settings.show_leaderboard" type="checkbox" />
               <span>แสดง Leaderboard Top 5 บนหน้าโดเนต</span>
             </label>
@@ -765,45 +818,6 @@ const themeOptions = [
             <input v-model="settings.alert_image_url" class="input" placeholder="https://example.com/cat.gif" />
           </section>
 
-          <section class="card">
-            <div class="card-head">
-              <h2>🎨 หน้าโดเนตของฉัน</h2>
-              <span class="badge badge-pink">เห็นผลทันที →</span>
-            </div>
-            <label>ธีมหน้า (PAGE THEME)</label>
-            <div class="palettes">
-              <button
-                v-for="t in pageThemes"
-                :key="t.value"
-                class="palette"
-                :class="{ active: settings.page_theme === t.value }"
-                @click="settings.page_theme = t.value"
-              >
-                <i class="swatch" :style="{ background: t.color }" />
-                <b>{{ t.label }}</b>
-                <span>{{ t.desc }}</span>
-              </button>
-            </div>
-
-            <label>รูปปกหน้าโดเนต (URL https — เว้นว่าง = ใช้พื้นหลังเดิม)</label>
-            <input v-model="settings.cover_url" class="input" placeholder="https://images.example.com/banner.jpg" />
-
-            <label>เกี่ยวกับฉัน (แสดงใต้ปก — ไม่เกิน 400 ตัวอักษร)</label>
-            <textarea v-model="settings.about_text" class="input" rows="3" maxlength="400" placeholder="สวัสดีครับ ผมสตรีมเกม ทุกคืน 20:00 💜" />
-
-            <label>ลิงก์โซเชียล (https — เว้นว่างช่องไหน = ไม่แสดง)</label>
-            <div class="tts-opts">
-              <div><label>f Facebook</label><input v-model="settings.social_facebook" class="input" placeholder="https://facebook.com/ชื่อคุณ" /></div>
-              <div><label>▶ YouTube</label><input v-model="settings.social_youtube" class="input" placeholder="https://youtube.com/@ชื่อคุณ" /></div>
-              <div><label>🎮 Twitch</label><input v-model="settings.social_twitch" class="input" placeholder="https://twitch.tv/ชื่อคุณ" /></div>
-              <div><label>♪ TikTok</label><input v-model="settings.social_tiktok" class="input" placeholder="https://tiktok.com/@ชื่อคุณ" /></div>
-              <div><label>𝕏 (Twitter)</label><input v-model="settings.social_x" class="input" placeholder="https://x.com/ชื่อคุณ" /></div>
-            </div>
-
-            <p class="muted small" style="margin-top: 14px">
-              💡 ดูผลจริงได้ที่ลิงก์หน้าโดเนตของคุณ: <a :href="donateLink" target="_blank" rel="noopener" style="color: var(--primary)">{{ donateLink }} ↗</a>
-            </p>
-          </section>
         </template>
       </main>
     </div>
