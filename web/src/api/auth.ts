@@ -95,6 +95,11 @@ export interface DonationStatusResponse {
   review_note: string
 }
 
+export interface SocialLink {
+  kind: 'facebook' | 'youtube' | 'twitch' | 'tiktok' | 'x' | string
+  url: string
+}
+
 export interface PublicProfile {
   username: string
   display_name: string
@@ -104,6 +109,11 @@ export interface PublicProfile {
   show_leaderboard: boolean
   /// รับโอนตรง + แนบสลิป (สตรีมเมอร์ตั้งเบอร์พร้อมเพย์แล้ว)
   accepts_slip: boolean
+  // Phase 9: การปรับแต่งหน้า
+  page_theme: 'rose' | 'mint' | 'midnight' | 'retro' | string
+  cover_url: string
+  about_text: string
+  socials: SocialLink[]
 }
 
 export interface StreamerSummary {
@@ -132,6 +142,15 @@ export interface Settings {
   promptpay_id: string
   bank_name: string
   bank_no: string
+  // Phase 9: ปรับแต่งหน้าโดเนต
+  page_theme: string
+  cover_url: string
+  about_text: string
+  social_facebook: string
+  social_youtube: string
+  social_twitch: string
+  social_tiktok: string
+  social_x: string
 }
 
 export interface TopDonator {

@@ -98,8 +98,13 @@ pub fn render_index(
     scheme: &str,
     host: &str,
     self_url: &str,
+    cover_url: Option<&str>,
 ) -> String {
-    let image_url = format!("{scheme}://{host}/og/og-card.png");
+    // มีรูปปกที่ตั้งไว้ → ใช้ปกเป็นภาพแชร์ (สวยกว่าการ์ด generated)
+    let image_url = match cover_url.filter(|c| c.starts_with("https://")) {
+        Some(c) => c.to_string(),
+        None => format!("{scheme}://{host}/og/og-card.png"),
+    };
     let (title, desc) = match (username, display_name) {
         (Some(u), Some(name)) => (
             format!("สนับสนุน {} (@{}) ❤️ Donate Me", escape(name), escape(u)),
@@ -138,18 +143,24 @@ async fn spa_with_username(
     // ดึง display_name จาก DB (username: a-z0-9_ เท่านั้น กัน injection ตอนค้น)
     let mut display_name = None;
     let mut real_username = None;
+    let mut cover_url = None;
     if let Some(u) = &username {
         if !u.is_empty()
             && u.len() <= 20
             && u.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
         {
-            if let Ok(Some(row)) = sqlx::query("SELECT username, display_name FROM users WHERE username = ?")
-                .bind(u)
-                .fetch_optional(&state.db)
-                .await
+            if let Ok(Some(row)) = sqlx::query(
+                "SELECT u.username, u.display_name, s.cover_url
+                 FROM users u LEFT JOIN settings s ON s.user_id = u.id
+                 WHERE u.username = ?",
+            )
+            .bind(u)
+            .fetch_optional(&state.db)
+            .await
             {
                 real_username = Some(row.get::<String, _>("username"));
                 display_name = Some(row.get::<String, _>("display_name"));
+                cover_url = Some(row.get::<String, _>("cover_url"));
             }
         }
     }
@@ -169,7 +180,15 @@ async fn spa_with_username(
 
     (
         [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
-        render_index(&html, real_username.as_deref(), display_name.as_deref(), scheme, host, &self_url),
+        render_index(
+            &html,
+            real_username.as_deref(),
+            display_name.as_deref(),
+            scheme,
+            host,
+            &self_url,
+            cover_url.as_deref(),
+        ),
     )
 }
 

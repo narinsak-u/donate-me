@@ -106,6 +106,9 @@ const goalPct = computed(() => {
 const hasGoal = computed(() => !!profile.value && profile.value.goal_amount > 0)
 
 const displayName = computed(() => profile.value?.display_name ?? 'Donate Me')
+// Phase 9: ธีมหน้าโดเนต (rose = เดิม) — override ตัวแปรสีบน root ของหน้า
+const pageTheme = computed(() => (profile.value?.page_theme as string) || 'rose')
+
 // เหตุผลที่สลิปถูกปฏิเสธ (status เปลี่ยนเป็น rejected แล้ว — composable หยุด poll ตอนนั้น)
 const statusNote = ref('')
 watch(status, async (s) => {
@@ -188,18 +191,36 @@ onUnmounted(() => clearTimeout(resetTimer))
 </script>
 
 <template>
-  <div class="page">
+  <div class="page" :class="`ptheme-${pageTheme}`">
     <SiteTopbar full />
 
     <main class="shell">
-      <!-- ===== Hero สตรีมเมอร์ ===== -->
-      <section v-if="!loadError" class="card hero">
+      <!-- ===== Hero สตรีมเมอร์ (มีรูปปกถ้าตั้งค่า — Phase 9) ===== -->
+      <section v-if="!loadError" class="card hero" :class="{ 'has-cover': !!profile?.cover_url }"
+        :style="profile?.cover_url ? { backgroundImage: `url(${profile.cover_url})` } : undefined">
+        <div v-if="profile?.cover_url" class="cover-shade" aria-hidden="true" />
         <div class="avatar"><span>{{ initial }}</span></div>
         <div class="hero-info">
           <h1>{{ displayName }}</h1>
           <p class="bio">
             <template v-if="profile">สนับสนุน @{{ profile.username }} — ทุกกำลังใจช่วยให้สตรีมต่อเนื่องและสนุกยิ่งขึ้น 💜</template>
           </p>
+          <!-- Phase 9: ลิงก์โซเชียล -->
+          <div v-if="profile?.socials?.length" class="socials">
+            <a
+              v-for="s in profile.socials"
+              :key="s.kind"
+              :href="s.url"
+              target="_blank"
+              rel="noopener"
+              class="social-chip"
+              :class="`soc-${s.kind}`"
+              :title="s.kind"
+            >
+              <span class="soc-ico">{{ { facebook: 'f', youtube: '▶', twitch: '🎮', tiktok: '♪', x: '𝕏' }[s.kind] ?? '🔗' }}</span>
+              <span class="soc-label">{{ { facebook: 'Facebook', youtube: 'YouTube', twitch: 'Twitch', tiktok: 'TikTok', x: 'X' }[s.kind] ?? s.kind }}</span>
+            </a>
+          </div>
           <RouterLink class="back-link" to="/">← ทำเนียบสตรีมเมอร์ทั้งหมด</RouterLink>
           <div v-if="hasGoal" class="goal-box">
             <div class="goal-head">
@@ -221,6 +242,12 @@ onUnmounted(() => clearTimeout(resetTimer))
             </div>
           </div>
         </div>
+      </section>
+
+      <!-- ===== เกี่ยวกับฉัน (Phase 9) ===== -->
+      <section v-if="profile?.about_text" class="card about-card">
+        <h2>💬 เกี่ยวกับ{{ displayName }}</h2>
+        <p class="about-text">{{ profile.about_text }}</p>
       </section>
 
       <p v-if="loadError" class="load-error">{{ loadError }}</p>
@@ -466,6 +493,66 @@ onUnmounted(() => clearTimeout(resetTimer))
   align-items: flex-start;
   padding: 24px;
 }
+/* ===== Phase 9: รูปปก ===== */
+.hero.has-cover {
+  position: relative;
+  background-size: cover;
+  background-position: center;
+  overflow: hidden;
+  padding-top: 130px; /* เผื่อที่ให้ภาพปกด้านบน */
+}
+.cover-shade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(8, 12, 24, 0.62) 0%, rgba(8, 12, 24, 0.78) 55%, var(--bg-card) 90%);
+  pointer-events: none;
+}
+.hero.has-cover > * { position: relative; z-index: 1; }
+
+/* ===== Phase 9: โซเชียล ===== */
+.socials { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 4px; }
+.social-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px 5px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-dim);
+  font-size: 12.5px;
+  text-decoration: none;
+  transition: border-color 0.15s, transform 0.15s;
+}
+.social-chip:hover { border-color: var(--border-bright); transform: translateY(-1px); }
+.soc-ico {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11.5px;
+  font-weight: 800;
+  color: #fff;
+  font-family: var(--font-head);
+}
+.soc-facebook .soc-ico { background: #1877f2; }
+.soc-youtube .soc-ico { background: #ff0000; }
+.soc-twitch .soc-ico { background: #9146ff; }
+.soc-tiktok .soc-ico { background: #010101; border: 1px solid #444; }
+.soc-x .soc-ico { background: #1d1d1d; border: 1px solid #444; }
+
+/* ===== Phase 9: About ===== */
+.about-card h2 { font-size: 16px; margin-bottom: 8px; }
+.about-text { color: var(--text-dim); font-size: 14px; line-height: 1.75; white-space: pre-line; }
+
+/* ===== Phase 9: ธีมหน้า (override ตัวแปรสี — rose = default เดิม) ===== */
+.ptheme-mint { --primary: #10b981; --primary-soft: rgba(16, 185, 129, 0.12); }
+.ptheme-midnight { --primary: #818cf8; --primary-soft: rgba(129, 140, 248, 0.12); --bg: #0b1020; }
+.ptheme-retro { --primary: #f59e0b; --primary-soft: rgba(245, 158, 11, 0.12); }
+.ptheme-retro .hero, .ptheme-retro .main-card { border-style: dashed; }
+
 .avatar {
   flex-shrink: 0;
   width: 76px;

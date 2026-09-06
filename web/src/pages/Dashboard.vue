@@ -207,11 +207,21 @@ async function save() {
   if (!settings.value) return
   try {
     settings.value = await api.updateSettings(settings.value)
+    previewKey.value++ // รีเฟรชพรีวิวหน้าโดเนต
     alert('บันทึกแล้ว!')
   } catch (e) {
     alert(e instanceof Error ? e.message : 'บันทึกไม่สำเร็จ')
   }
 }
+
+// Phase 9: ธีมหน้าโดเนต + คีย์รีเฟรชพรีวิว
+const previewKey = ref(0)
+const pageThemes = [
+  { value: 'rose', label: 'Rose (เดิม)', desc: 'ชมพู Stitch', color: '#f43f5e' },
+  { value: 'mint', label: 'Mint', desc: 'เขียวสดใส', color: '#10b981' },
+  { value: 'midnight', label: 'Midnight', desc: 'ม่วงน้ำเงินลึก', color: '#818cf8' },
+  { value: 'retro', label: 'Retro', desc: 'เหลืองสายวินเทจ', color: '#f59e0b' },
+]
 
 async function uploadSound() {
   if (!soundFile.value) return
@@ -757,6 +767,53 @@ const themeOptions = [
             </label>
             <label>รูป/GIF ประกอบป็อบอัพ (URL https — เว้นว่าง = ไม่แสดง)</label>
             <input v-model="settings.alert_image_url" class="input" placeholder="https://example.com/cat.gif" />
+          </section>
+
+          <section class="card">
+            <div class="card-head">
+              <h2>🎨 หน้าโดเนตของฉัน</h2>
+              <span class="badge badge-pink">เห็นผลทันที →</span>
+            </div>
+            <label>ธีมหน้า (PAGE THEME)</label>
+            <div class="palettes">
+              <button
+                v-for="t in pageThemes"
+                :key="t.value"
+                class="palette"
+                :class="{ active: settings.page_theme === t.value }"
+                @click="settings.page_theme = t.value"
+              >
+                <i class="swatch" :style="{ background: t.color }" />
+                <b>{{ t.label }}</b>
+                <span>{{ t.desc }}</span>
+              </button>
+            </div>
+
+            <label>รูปปกหน้าโดเนต (URL https — เว้นว่าง = ใช้พื้นหลังเดิม)</label>
+            <input v-model="settings.cover_url" class="input" placeholder="https://images.example.com/banner.jpg" />
+
+            <label>เกี่ยวกับฉัน (แสดงใต้ปก — ไม่เกิน 400 ตัวอักษร)</label>
+            <textarea v-model="settings.about_text" class="input" rows="3" maxlength="400" placeholder="สวัสดีครับ ผมสตรีมเกม ทุกคืน 20:00 💜" />
+
+            <label>ลิงก์โซเชียล (https — เว้นว่างช่องไหน = ไม่แสดง)</label>
+            <div class="tts-opts">
+              <div><label>f Facebook</label><input v-model="settings.social_facebook" class="input" placeholder="https://facebook.com/ชื่อคุณ" /></div>
+              <div><label>▶ YouTube</label><input v-model="settings.social_youtube" class="input" placeholder="https://youtube.com/@ชื่อคุณ" /></div>
+              <div><label>🎮 Twitch</label><input v-model="settings.social_twitch" class="input" placeholder="https://twitch.tv/ชื่อคุณ" /></div>
+              <div><label>♪ TikTok</label><input v-model="settings.social_tiktok" class="input" placeholder="https://tiktok.com/@ชื่อคุณ" /></div>
+              <div><label>𝕏 (Twitter)</label><input v-model="settings.social_x" class="input" placeholder="https://x.com/ชื่อคุณ" /></div>
+            </div>
+
+            <div class="preview-shell" style="margin-top: 16px">
+              <div class="preview-head">🔍 พรีวิวหน้าโดเนต (กดบันทึกแล้วรีเฟรช)</div>
+              <iframe
+                v-if="donateLink"
+                :key="previewKey"
+                :src="`${donateLink}?preview=1`"
+                class="preview-frame"
+                title="พรีวิวหน้าโดเนต"
+              />
+            </div>
           </section>
         </template>
       </main>

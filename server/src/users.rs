@@ -27,6 +27,17 @@ pub struct PublicProfile {
     pub show_leaderboard: bool,
     /// รับโอนตรง+แนบสลิป (สตรีมเมอร์ตั้งเบอร์พร้อมเพย์แล้ว)
     pub accepts_slip: bool,
+    // Phase 9: การปรับแต่งหน้า
+    pub page_theme: String,
+    pub cover_url: String,
+    pub about_text: String,
+    pub socials: Vec<SocialLink>,
+}
+
+#[derive(Serialize)]
+pub struct SocialLink {
+    pub kind: String, // facebook | youtube | twitch | tiktok | x
+    pub url: String,
 }
 
 /// GET /api/u/:username — ข้อมูลที่หน้าโดเนตสาธารณะต้องใช้
@@ -36,6 +47,8 @@ pub async fn public_profile(
 ) -> Result<Json<PublicProfile>, (StatusCode, String)> {
     let row = sqlx::query(
         "SELECT u.username, u.display_name, s.goal_amount, s.theme, s.show_leaderboard, s.promptpay_id,
+                s.page_theme, s.cover_url, s.about_text,
+                s.social_facebook, s.social_youtube, s.social_twitch, s.social_tiktok, s.social_x,
                 COALESCE((SELECT SUM(d.amount) FROM donations d
                           WHERE d.user_id = u.id AND d.status = 'paid'), 0) AS goal_raised
          FROM users u LEFT JOIN settings s ON s.user_id = u.id
@@ -59,6 +72,22 @@ pub async fn public_profile(
             .as_deref()
             .map(crate::promptpay::is_valid_id)
             .unwrap_or(false),
+        page_theme: row.get::<Option<String>, _>("page_theme").unwrap_or_else(|| "rose".into()),
+        cover_url: row.get::<Option<String>, _>("cover_url").unwrap_or_default(),
+        about_text: row.get::<Option<String>, _>("about_text").unwrap_or_default(),
+        socials: [
+            ("facebook", "social_facebook"),
+            ("youtube", "social_youtube"),
+            ("twitch", "social_twitch"),
+            ("tiktok", "social_tiktok"),
+            ("x", "social_x"),
+        ]
+        .iter()
+        .filter_map(|(kind, col)| {
+            let url: Option<String> = row.get(col);
+            url.filter(|u| !u.is_empty()).map(|u| SocialLink { kind: kind.to_string(), url: u })
+        })
+        .collect(),
     }))
 }
 
@@ -215,6 +244,15 @@ pub struct Settings {
     pub promptpay_id: String,
     pub bank_name: String,
     pub bank_no: String,
+    // Phase 9: ปรับแต่งหน้าโดเนต
+    pub page_theme: String,
+    pub cover_url: String,
+    pub about_text: String,
+    pub social_facebook: String,
+    pub social_youtube: String,
+    pub social_twitch: String,
+    pub social_tiktok: String,
+    pub social_x: String,
 }
 
 #[derive(Deserialize)]
@@ -249,6 +287,22 @@ pub struct UpdateSettings {
     pub bank_name: Option<String>,
     #[serde(default)]
     pub bank_no: Option<String>,
+    #[serde(default)]
+    pub page_theme: Option<String>,
+    #[serde(default)]
+    pub cover_url: Option<String>,
+    #[serde(default)]
+    pub about_text: Option<String>,
+    #[serde(default)]
+    pub social_facebook: Option<String>,
+    #[serde(default)]
+    pub social_youtube: Option<String>,
+    #[serde(default)]
+    pub social_twitch: Option<String>,
+    #[serde(default)]
+    pub social_tiktok: Option<String>,
+    #[serde(default)]
+    pub social_x: Option<String>,
 }
 
 pub async fn get_settings(
@@ -324,8 +378,42 @@ pub async fn update_settings(
         return Err((StatusCode::BAD_REQUEST, "กรอกธนาคารและเลขบัญชีให้ครบทั้งคู่ (หรือเว้นว่างทั้งคู่)".into()));
     }
 
+    // Phase 9: หน้าโดเนต — ธีม whitelist, cover/โซเชียล https เท่านั้น, about ≤ 400
+    let page_theme = match body.page_theme.as_deref() {
+        Some(t) if ["rose", "mint", "midnight", "retro"].contains(&t) => t.to_string(),
+        Some(_) => return Err((StatusCode::BAD_REQUEST, "page_theme ต้องเป็น rose/mint/midnight/retro".into())),
+        None => cur.page_theme,
+    };
+    let cover_url = match body.cover_url.unwrap_or(cur.cover_url) {
+        u if u.is_empty() => String::new(),
+        u if u.starts_with("https://") => u,
+        _ => return Err((StatusCode::BAD_REQUEST, "cover_url ต้องเป็น https:// เท่านั้น".into())),
+    };
+    let about_text = body.about_text.unwrap_or(cur.about_text);
+    let about_text = crate::sanitize::clean_text(&about_text);
+    if about_text.chars().count() > 400 {
+        return Err((StatusCode::BAD_REQUEST, "about_text ยาวเกิน 400 ตัวอักษร".into()));
+    }
+    let mut socials = [
+        ("social_facebook", body.social_facebook.unwrap_or(cur.social_facebook)),
+        ("social_youtube", body.social_youtube.unwrap_or(cur.social_youtube)),
+        ("social_twitch", body.social_twitch.unwrap_or(cur.social_twitch)),
+        ("social_tiktok", body.social_tiktok.unwrap_or(cur.social_tiktok)),
+        ("social_x", body.social_x.unwrap_or(cur.social_x)),
+    ];
+    for (name, url) in socials.iter_mut() {
+        let trimmed = url.trim().to_string();
+        if !trimmed.is_empty() && !trimmed.starts_with("https://") {
+            return Err((StatusCode::BAD_REQUEST, format!("{name} ต้องเป็น https:// เท่านั้น")));
+        }
+        if trimmed.chars().count() > 200 {
+            return Err((StatusCode::BAD_REQUEST, format!("{name} ยาวเกิน 200 ตัวอักษร")));
+        }
+        *url = trimmed;
+    }
+
     sqlx::query(
-        "UPDATE settings SET theme = ?, goal_amount = ?, alert_duration_sec = ?, tts_enabled = ?, alert_text = ?, alert_image_url = ?, show_leaderboard = ?, alert_position = ?, tts_speed = ?, tts_max_len = ?, tier_vip_amount = ?, tier_gold_amount = ?, promptpay_id = ?, bank_name = ?, bank_no = ? WHERE user_id = ?",
+        "UPDATE settings SET theme = ?, goal_amount = ?, alert_duration_sec = ?, tts_enabled = ?, alert_text = ?, alert_image_url = ?, show_leaderboard = ?, alert_position = ?, tts_speed = ?, tts_max_len = ?, tier_vip_amount = ?, tier_gold_amount = ?, promptpay_id = ?, bank_name = ?, bank_no = ?, page_theme = ?, cover_url = ?, about_text = ?, social_facebook = ?, social_youtube = ?, social_twitch = ?, social_tiktok = ?, social_x = ? WHERE user_id = ?",
     )
     .bind(&theme)
     .bind(goal_amount)
@@ -342,6 +430,14 @@ pub async fn update_settings(
     .bind(&promptpay_id)
     .bind(&bank_name)
     .bind(&bank_no)
+    .bind(&page_theme)
+    .bind(&cover_url)
+    .bind(&about_text)
+    .bind(&socials[0].1)
+    .bind(&socials[1].1)
+    .bind(&socials[2].1)
+    .bind(&socials[3].1)
+    .bind(&socials[4].1)
     .bind(&user.user_id)
     .execute(&state.db)
     .await
@@ -353,7 +449,7 @@ pub async fn update_settings(
 
 async fn fetch_settings(state: &AppState, user_id: &str) -> Result<Settings, (StatusCode, String)> {
     let row = sqlx::query(
-        "SELECT theme, goal_amount, alert_duration_sec, tts_enabled, alert_text, alert_sound_url, alert_image_url, show_leaderboard, alert_position, tts_speed, tts_max_len, tier_vip_amount, tier_gold_amount, promptpay_id, bank_name, bank_no FROM settings WHERE user_id = ?",
+        "SELECT theme, goal_amount, alert_duration_sec, tts_enabled, alert_text, alert_sound_url, alert_image_url, show_leaderboard, alert_position, tts_speed, tts_max_len, tier_vip_amount, tier_gold_amount, promptpay_id, bank_name, bank_no, page_theme, cover_url, about_text, social_facebook, social_youtube, social_twitch, social_tiktok, social_x FROM settings WHERE user_id = ?",
     )
     .bind(user_id)
     .fetch_optional(&state.db)
@@ -377,5 +473,13 @@ async fn fetch_settings(state: &AppState, user_id: &str) -> Result<Settings, (St
         promptpay_id: row.get("promptpay_id"),
         bank_name: row.get("bank_name"),
         bank_no: row.get("bank_no"),
+        page_theme: row.get("page_theme"),
+        cover_url: row.get("cover_url"),
+        about_text: row.get("about_text"),
+        social_facebook: row.get("social_facebook"),
+        social_youtube: row.get("social_youtube"),
+        social_twitch: row.get("social_twitch"),
+        social_tiktok: row.get("social_tiktok"),
+        social_x: row.get("social_x"),
     })
 }

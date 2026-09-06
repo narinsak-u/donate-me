@@ -185,6 +185,14 @@ let settings: Settings = {
   promptpay_id: '',
   bank_name: '',
   bank_no: '',
+  page_theme: 'rose',
+  cover_url: '',
+  about_text: '',
+  social_facebook: '',
+  social_youtube: '',
+  social_twitch: '',
+  social_tiktok: '',
+  social_x: '',
 }
 
 async function loadSettings() {
