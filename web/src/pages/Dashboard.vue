@@ -28,7 +28,7 @@ const soundFile = ref<File | null>(null)
 const soundUrl = ref('')
 const loadError = ref('')
 
-// ---------- Phase 7: คิวสลิป (โอนตรง) ----------
+// ---------- Phase 7: บัญชีรับเงินโอนตรง + คิวสลิป ----------
 const slips = ref<SlipItem[]>([])
 const slipBusy = ref('') // id ที่กำลังกดอนุมัติ/ปฏิเสธ
 const rejectTarget = ref<SlipItem | null>(null)
@@ -288,7 +288,7 @@ const goalPct = computed(() =>
 const navItems = [
   { key: 'overview', icon: '📊', label: 'ภาพรวม (Dashboard)' },
   { key: 'donations', icon: '🧾', label: 'ประวัติโดเนต' },
-  { key: 'slips', icon: '🧿', label: 'คิวสลิป (โอนตรง)' },
+  { key: 'slips', icon: '🏦', label: 'ตั้งค่าบัญชี' },
   { key: 'settings', icon: '🔔', label: 'ตั้งค่าแจ้งเตือน (Alerts)' },
   { key: 'wallet', icon: '💰', label: 'กระเป๋าเงิน & ถอน' },
 ] as const
@@ -425,50 +425,13 @@ const themeOptions = [
             </div>
           </section>
 
-          <div class="grid-2">
-            <section class="card">
-              <div class="card-head">
-                <h2>📈 สถิติรายได้ 30 วันล่าสุด</h2>
-                <span class="badge badge-pink">รายวัน</span>
-              </div>
-              <DonationChart :data="stats.series_30d" :goal="stats.goal_amount" />
-            </section>
-
-            <section class="card">
-              <div class="card-head">
-                <h2>🔔 ทดสอบ Alert</h2>
-                <span class="badge badge-green">OBS LINKED</span>
-              </div>
-              <p class="muted">กดปุ่มเพื่อทดสอบป็อบอัพตามระดับยอด — เด้งทั้งพรีวิวด้านล่างและบน OBS ทันที</p>
-              <div class="tiers">
-                <button class="tier" :disabled="testSending" @click="testAlert(20)">
-                  <b class="tier-amt t20">฿20</b>
-                  <div><b>Alert ฝั่งปกติ ฿20</b><span>ป็อปปกติ + คอนเฟตติสี</span></div>
-                  <i class="play">▶</i>
-                </button>
-                <button class="tier" :disabled="testSending" @click="testAlert(100)">
-                  <b class="tier-amt t100">฿100</b>
-                  <div><b>Alert ระดับกลาง ฿100+</b><span>แอนิเมชันพิเศษ + ข้อความ TTS เต็มรูปแบบ</span></div>
-                  <i class="play">▶</i>
-                </button>
-                <button class="tier gold" :disabled="testSending" @click="testAlert(500)">
-                  <b class="tier-amt t500">฿500+</b>
-                  <div><b>Super Chat ฿500+</b><span>ทองคำ + TTS เร่งเสียง + คอนเฟตติลูกใหญ่</span></div>
-                  <i class="play">▶</i>
-                </button>
-              </div>
-              <p v-if="testDone" class="test-status ok" role="status">✓ ส่งแล้ว — alert กำลังเด้งในพรีวิวด้านล่าง (และบน OBS ถ้าเปิดไว้)</p>
-              <p v-else-if="testError" class="test-status err" role="alert">{{ testError }}</p>
-
-              <div class="preview-shell">
-                <div class="preview-head">🔍 พรีวิวสด — เหมือนใน OBS</div>
-                <iframe v-if="overlayUrl" :src="overlayUrl" class="preview-frame" title="พรีวิว Overlay"></iframe>
-                <p v-else class="muted small preview-loading">กำลังโหลดพรีวิว...</p>
-              </div>
-
-              <p class="muted small" style="margin-top: 14px">Latency: ~120ms · <a href="/overlay.html" target="_blank" style="color: var(--primary)">เปิดหน้า Overlay ↗</a></p>
-            </section>
-          </div>
+          <section class="card">
+            <div class="card-head">
+              <h2>📈 สถิติรายได้ 30 วันล่าสุด</h2>
+              <span class="badge badge-pink">รายวัน</span>
+            </div>
+            <DonationChart :data="stats.series_30d" :goal="stats.goal_amount" />
+          </section>
         </template>
 
         <!-- ===== Donations ===== -->
@@ -513,8 +476,59 @@ const themeOptions = [
           </section>
         </template>
 
-        <!-- ===== คิวสลิป (โอนตรง) ===== -->
+        <!-- ===== ตั้งค่าบัญชี (บัญชีรับเงินโอนตรง + คิวสลิป) ===== -->
         <template v-if="tab === 'slips'">
+          <section v-if="settings" class="card">
+            <div class="card-head">
+              <h2>🏦 บัญชีรับเงิน (โอนตรง 0% ค่าธรรมเนียม)</h2>
+              <span class="badge" :class="ppValid ? 'badge-green' : 'badge-pink'">
+                {{ ppValid ? 'เปิดรับโอนตรงแล้ว' : 'ยังไม่เปิดใช้' }}
+              </span>
+            </div>
+            <p class="muted small" style="margin-bottom: 12px">
+              กรอกเบอร์พร้อมเพย์ — หน้าโดเนตจะสร้าง QR จริงให้ผู้ชมสแกนโอน<b>เข้าบัญชีคุณโดยตรง</b> (เงินไม่ผ่านเว็บ)
+              ผู้ชมแนบสลิป → คุณกดอนุมัติในคิวด้านล่าง → Alert เด้งบนจอ
+              <template v-if="!ppValid"> · <b>ไม่กรอก = ใช้ QR จำลอง (โหมดทดสอบ) เหมือนเดิม</b></template>
+            </p>
+            <div class="tts-opts">
+              <div>
+                <label>เบอร์พร้อมเพย์ (10 หลัก) หรือเลขบัตร (13 หลัก)</label>
+                <input
+                  v-model="settings.promptpay_id"
+                  class="input"
+                  inputmode="numeric"
+                  placeholder="0812345678"
+                  maxlength="13"
+                />
+              </div>
+              <div>
+                <label>ธนาคาร (ช่องทางสำรอง — ไม่บังคับ)</label>
+                <input v-model="settings.bank_name" class="input" placeholder="ธนาคารไทยพาณิชย์" maxlength="60" />
+              </div>
+              <div>
+                <label>เลขบัญชี</label>
+                <input v-model="settings.bank_no" class="input" inputmode="numeric" placeholder="4051234567" maxlength="30" />
+              </div>
+            </div>
+            <div v-if="ppValid" class="pp-test">
+              <div class="pp-qr">
+                <img
+                  :key="testQrAmount"
+                  :src="dashApi.promptpayQrUrl(testQrAmount)"
+                  alt="QR ทดสอบพร้อมเพย์ของคุณ"
+                  width="150"
+                  height="150"
+                />
+                <span class="muted small">QR จริงของคุณ (ทดลองสแกนได้)</span>
+              </div>
+              <div class="pp-test-side">
+                <label>ยอดทดสอบ (฿)</label>
+                <input v-model.number="testQrAmount" type="number" min="1" max="100000" class="input" style="max-width: 130px" />
+                <p class="muted small">เปลี่ยนยอดแล้ว QR จะรีเฟรช — ลองสแกนด้วยแอปธนาคารก่อนเปิดใช้จริง</p>
+              </div>
+            </div>
+          </section>
+
           <section class="card">
             <div class="card-head">
               <h2>🧿 คิวสลิป — โอนเข้าบัญชีคุณตรง</h2>
@@ -574,57 +588,6 @@ const themeOptions = [
 
         <!-- ===== Settings ===== -->
         <template v-if="tab === 'settings' && settings">
-          <section class="card">
-            <div class="card-head">
-              <h2>🏦 บัญชีรับเงิน (โอนตรง 0% ค่าธรรมเนียม)</h2>
-              <span class="badge" :class="ppValid ? 'badge-green' : 'badge-pink'">
-                {{ ppValid ? 'เปิดรับโอนตรงแล้ว' : 'ยังไม่เปิดใช้' }}
-              </span>
-            </div>
-            <p class="muted small" style="margin-bottom: 12px">
-              กรอกเบอร์พร้อมเพย์ — หน้าโดเนตจะสร้าง QR จริงให้ผู้ชมสแกนโอน<b>เข้าบัญชีคุณโดยตรง</b> (เงินไม่ผ่านเว็บ)
-              ผู้ชมแนบสลิป → คุณกดอนุมัติในแท็บ "คิวสลิป" → Alert เด้งบนจอ
-              <template v-if="!ppValid"> · <b>ไม่กรอก = ใช้ QR จำลอง (โหมดทดสอบ) เหมือนเดิม</b></template>
-            </p>
-            <div class="tts-opts">
-              <div>
-                <label>เบอร์พร้อมเพย์ (10 หลัก) หรือเลขบัตร (13 หลัก)</label>
-                <input
-                  v-model="settings.promptpay_id"
-                  class="input"
-                  inputmode="numeric"
-                  placeholder="0812345678"
-                  maxlength="13"
-                />
-              </div>
-              <div>
-                <label>ธนาคาร (ช่องทางสำรอง — ไม่บังคับ)</label>
-                <input v-model="settings.bank_name" class="input" placeholder="ธนาคารไทยพาณิชย์" maxlength="60" />
-              </div>
-              <div>
-                <label>เลขบัญชี</label>
-                <input v-model="settings.bank_no" class="input" inputmode="numeric" placeholder="4051234567" maxlength="30" />
-              </div>
-            </div>
-            <div v-if="ppValid" class="pp-test">
-              <div class="pp-qr">
-                <img
-                  :key="testQrAmount"
-                  :src="dashApi.promptpayQrUrl(testQrAmount)"
-                  alt="QR ทดสอบพร้อมเพย์ของคุณ"
-                  width="150"
-                  height="150"
-                />
-                <span class="muted small">QR จริงของคุณ (ทดลองสแกนได้)</span>
-              </div>
-              <div class="pp-test-side">
-                <label>ยอดทดสอบ (฿)</label>
-                <input v-model.number="testQrAmount" type="number" min="1" max="100000" class="input" style="max-width: 130px" />
-                <p class="muted small">เปลี่ยนยอดแล้ว QR จะรีเฟรช — ลองสแกนด้วยแอปธนาคารก่อนเปิดใช้จริง</p>
-              </div>
-            </div>
-          </section>
-
           <section class="card">
             <div class="card-head">
               <h2>📺 OBS Browser Source Integration</h2>
@@ -711,6 +674,41 @@ const themeOptions = [
                 <input v-model.number="settings.tier_gold_amount" type="number" min="1" class="input" />
               </div>
             </div>
+          </section>
+
+          <section class="card">
+            <div class="card-head">
+              <h2>🔔 ทดสอบ Alert</h2>
+              <span class="badge badge-green">OBS LINKED</span>
+            </div>
+            <p class="muted">กดปุ่มเพื่อทดสอบป็อบอัพตามระดับยอด — เด้งทั้งพรีวิวด้านล่างและบน OBS ทันที</p>
+            <div class="tiers">
+              <button class="tier" :disabled="testSending" @click="testAlert(20)">
+                <b class="tier-amt t20">฿20</b>
+                <div><b>Alert ฝั่งปกติ ฿20</b><span>ป็อปปกติ + คอนเฟตติสี</span></div>
+                <i class="play">▶</i>
+              </button>
+              <button class="tier" :disabled="testSending" @click="testAlert(100)">
+                <b class="tier-amt t100">฿100</b>
+                <div><b>Alert ระดับกลาง ฿100+</b><span>แอนิเมชันพิเศษ + ข้อความ TTS เต็มรูปแบบ</span></div>
+                <i class="play">▶</i>
+              </button>
+              <button class="tier gold" :disabled="testSending" @click="testAlert(500)">
+                <b class="tier-amt t500">฿500+</b>
+                <div><b>Super Chat ฿500+</b><span>ทองคำ + TTS เร่งเสียง + คอนเฟตติลูกใหญ่</span></div>
+                <i class="play">▶</i>
+              </button>
+            </div>
+            <p v-if="testDone" class="test-status ok" role="status">✓ ส่งแล้ว — alert กำลังเด้งในพรีวิวด้านล่าง (และบน OBS ถ้าเปิดไว้)</p>
+            <p v-else-if="testError" class="test-status err" role="alert">{{ testError }}</p>
+
+            <div class="preview-shell">
+              <div class="preview-head">🔍 พรีวิวสด — เหมือนใน OBS</div>
+              <iframe v-if="overlayUrl" :src="overlayUrl" class="preview-frame" title="พรีวิว Overlay"></iframe>
+              <p v-else class="muted small preview-loading">กำลังโหลดพรีวิว...</p>
+            </div>
+
+            <p class="muted small" style="margin-top: 14px">Latency: ~120ms · <a href="/overlay.html" target="_blank" style="color: var(--primary)">เปิดหน้า Overlay ↗</a></p>
           </section>
 
           <section class="card">
