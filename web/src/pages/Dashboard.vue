@@ -555,6 +555,10 @@ const themeOptions = [
               <button class="btn-ghost" @click="rejectTarget = null">ยกเลิก</button>
             </div>
           </section>
+          <div class="save-bar">
+            <button class="btn-primary" @click="save">💾 บันทึกการตั้งค่าทั้งหมดของหน้านี้</button>
+            <span class="muted small">ครอบคลุมทุกการ์ดในแท็บนี้</span>
+          </div>
         </template>
 
         <!-- ===== Wallet ===== -->
@@ -593,9 +597,6 @@ const themeOptions = [
             </div>
             <label>ยอดเป้าหมาย (บาท) — ขึ้นบนหน้าโดเนตและ overlay ทันทีหลังบันทึก</label>
             <input v-model.number="settings.goal_amount" class="input" type="number" min="0" style="max-width: 220px" />
-            <div class="save-row" style="margin-top: 12px">
-              <button class="btn-primary" @click="save">💾 บันทึก</button>
-            </div>
           </section>
 
           <section class="card">
@@ -637,6 +638,10 @@ const themeOptions = [
               💡 ดูผลจริงได้ที่ลิงก์หน้าโดเนตของคุณ: <a :href="donateLink" target="_blank" rel="noopener" style="color: var(--primary)">{{ donateLink }} ↗</a>
             </p>
           </section>
+          <div class="save-bar">
+            <button class="btn-primary" @click="save">💾 บันทึกการตั้งค่าทั้งหมดของหน้านี้</button>
+            <span class="muted small">ครอบคลุมทุกการ์ดในแท็บนี้</span>
+          </div>
         </template>
 
         <!-- ===== Settings ===== -->
@@ -754,6 +759,10 @@ const themeOptions = [
             </div>
             <p v-if="testDone" class="test-status ok" role="status">✓ ส่งแล้ว — alert กำลังเด้งในพรีวิวด้านล่าง (และบน OBS ถ้าเปิดไว้)</p>
             <p v-else-if="testError" class="test-status err" role="alert">{{ testError }}</p>
+            <div class="save-row">
+              <button class="btn-primary" @click="testAlert()">▶ ทดสอบแจ้งเตือน (ยอดปกติ)</button>
+              <a href="/overlay.html" target="_blank" class="ghost-link">เปิดหน้า Overlay (OBS) ↗</a>
+            </div>
 
             <div class="preview-shell">
               <div class="preview-head">🔍 พรีวิวสด — เหมือนใน OBS</div>
@@ -799,11 +808,6 @@ const themeOptions = [
             <input v-model="settings.alert_text" class="input" maxlength="200" />
             <p class="muted small" style="margin-top: 6px">ตัวแปร: <code>{name}</code> = ชื่อผู้โดเนต · <code>{amount}</code> = ยอดเงิน</p>
 
-            <div class="save-row">
-              <button class="btn-primary" @click="save">💾 บันทึกการตั้งค่า</button>
-              <button class="btn-ghost" @click="testAlert()">▶ ทดสอบแจ้งเตือน</button>
-              <a href="/overlay.html" target="_blank" class="ghost-link">เปิดหน้า Overlay (OBS) ↗</a>
-            </div>
           </section>
 
           <section class="card">
@@ -817,7 +821,10 @@ const themeOptions = [
             <label>รูป/GIF ประกอบป็อบอัพ (URL https — เว้นว่าง = ไม่แสดง)</label>
             <input v-model="settings.alert_image_url" class="input" placeholder="https://example.com/cat.gif" />
           </section>
-
+          <div class="save-bar">
+            <button class="btn-primary" @click="save">💾 บันทึกการตั้งค่าทั้งหมดของหน้านี้</button>
+            <span class="muted small">ครอบคลุมทุกการ์ดในแท็บนี้</span>
+          </div>
         </template>
       </main>
     </div>
@@ -1090,6 +1097,15 @@ td.hidden { color: var(--text-faint); font-style: italic; }
 .upload-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .upload-row input[type='file'] { font-size: 12.5px; color: var(--text-dim); }
 .save-row { display: flex; gap: 10px; margin-top: 20px; align-items: center; flex-wrap: wrap; }
+.save-bar {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  justify-content: center;
+  padding: 16px 0 34px;
+  border-top: 1px dashed var(--border);
+}
+.save-bar .btn-primary { padding: 13px 28px; font-size: 15px; }
 .ghost-link { color: #a5b4fc; font-size: 13.5px; }
 code { background: var(--bg-card-2); padding: 1px 6px; border-radius: 5px; font-size: 11.5px; color: var(--primary); }
 
