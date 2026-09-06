@@ -54,36 +54,46 @@ function pctOf(s: StreamerSummary): number {
       <p v-if="loadError" class="load-error" role="alert">{{ loadError }}</p>
       <p v-else-if="loading" class="muted loading">กำลังโหลดรายชื่อ...</p>
 
-      <!-- ===== รายชื่อสตรีมเมอร์ ===== -->
-      <section id="streamers" v-else-if="filtered.length" class="grid">
-        <button
-          v-for="s in filtered"
-          :key="s.username"
-          type="button"
-          class="card streamer"
-          @click="router.push(`/u/${s.username}`)"
-        >
-          <div class="head">
-            <div class="avatar"><span>{{ s.display_name[0] }}</span></div>
-            <div class="info">
-              <b>{{ s.display_name }}</b>
-              <span class="handle">@{{ s.username }}</span>
-            </div>
-          </div>
-          <div class="stats">
-            <em>฿{{ s.goal_raised.toLocaleString() }}</em>
-            <span class="muted">{{ s.donor_count }} คนสนับสนุน</span>
-          </div>
-          <div v-if="s.goal_amount > 0" class="goal">
-            <div class="goal-bar">
-              <div class="goal-fill" :style="{ width: pctOf(s) + '%' }" />
-            </div>
-            <span class="muted small">{{ pctOf(s) }}% ของเป้า ฿{{ s.goal_amount.toLocaleString() }}</span>
-          </div>
-        </button>
-      </section>
+      <template v-else>
+        <p class="count" role="status">
+          มีสตรีมเมอร์ <b>{{ streamers.length }}</b> คน
+          <template v-if="search.trim()"> · พบ {{ filtered.length }} ผลการค้นหา</template>
+        </p>
 
-      <p v-else class="muted empty">ยังไม่มีสตรีมเมอร์ในระบบ — สมัครเป็นคนแรกได้ที่ "เข้าร่วม"</p>
+        <!-- ===== รายชื่อสตรีมเมอร์ ===== -->
+        <section v-if="filtered.length" id="streamers" class="grid">
+          <button
+            v-for="s in filtered"
+            :key="s.username"
+            type="button"
+            class="card streamer"
+            @click="router.push(`/u/${s.username}`)"
+          >
+            <div class="head">
+              <div class="avatar"><span>{{ s.display_name[0] }}</span></div>
+              <div class="info">
+                <b>{{ s.display_name }}</b>
+                <span class="handle">@{{ s.username }}</span>
+              </div>
+            </div>
+            <div class="stats">
+              <em>฿{{ s.goal_raised.toLocaleString() }}</em>
+              <span class="muted">{{ s.donor_count }} คนสนับสนุน</span>
+            </div>
+            <div v-if="s.goal_amount > 0" class="goal">
+              <div class="goal-bar">
+                <div class="goal-fill" :style="{ width: pctOf(s) + '%' }" />
+              </div>
+              <span class="muted small">{{ pctOf(s) }}% ของเป้า ฿{{ s.goal_amount.toLocaleString() }}</span>
+            </div>
+          </button>
+        </section>
+
+        <p v-else class="muted empty">
+          <template v-if="search.trim()">ไม่พบสตรีมเมอร์ที่ตรงกับ "{{ search }}" — ลองคำอื่นดูนะ</template>
+          <template v-else>ยังไม่มีสตรีมเมอร์ในระบบ — สมัครเป็นคนแรกได้ที่ "เข้าร่วม"</template>
+        </p>
+      </template>
 
       <footer class="footer">
         <span><b>Donate Me</b> ❤️ แพลตฟอร์มสนับสนุนสตรีมเมอร์คนไทย</span>
@@ -108,6 +118,9 @@ h1 { font-size: 26px; font-weight: 700; }
 .muted { color: var(--text-faint); font-size: 12.5px; }
 .small { font-size: 11px; }
 .loading, .empty { text-align: center; padding: 28px; }
+.empty { font-size: 14px; }
+.count { color: var(--text-dim); font-size: 13.5px; }
+.count b { color: var(--primary); }
 .load-error {
   text-align: center;
   padding: 28px;

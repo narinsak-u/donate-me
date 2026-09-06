@@ -5,6 +5,7 @@ mod og;
 mod payment;
 mod rate_limit;
 mod sanitize;
+mod seed;
 mod users;
 
 use axum::{
@@ -419,6 +420,14 @@ async fn main() {
         .run(&db)
         .await
         .expect("migration ล้มเหลว");
+
+    // --seed: ใส่ข้อมูลสตรีมเมอร์/โดเนตตัวอย่างจริงลง DB แล้วจบ (ไม่สตาร์ตเซิร์ฟเวอร์)
+    // --seed --force: ล้างข้อมูลเดิมแล้ว seed ใหม่ทั้งหมด
+    if std::env::args().any(|a| a == "--seed") {
+        let force = std::env::args().any(|a| a == "--seed-force" || a == "--force");
+        seed::run(&db, force).await;
+        return;
+    }
 
     let (tx, _rx) = broadcast::channel(64);
     let state = AppState {
