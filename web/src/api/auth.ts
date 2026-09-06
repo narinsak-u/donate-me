@@ -151,7 +151,13 @@ export const api = {
   publicProfile: (username: string) => request<PublicProfile>(`/api/u/${username}`),
   streamers: () => request<StreamerSummary[]>('/api/streamers'),
   topDonators: (username: string) => request<TopDonator[]>(`/api/u/${username}/top`),
-  recentDonations: (username: string) => request<RecentDonation[]>(`/api/u/${username}/recent`),
+  recentDonations: (username: string, opts?: { limit?: number; before?: number }) => {
+    const p = new URLSearchParams()
+    if (opts?.limit) p.set('limit', String(opts.limit))
+    if (opts?.before) p.set('before', String(opts.before))
+    const qs = p.toString()
+    return request<RecentDonation[]>(`/api/u/${username}/recent${qs ? `?${qs}` : ''}`)
+  },
   getSettings: () => request<Settings>('/api/me/settings'),
   updateSettings: (body: Partial<Settings>) =>
     request<Settings>('/api/me/settings', { method: 'PUT', body: JSON.stringify(body) }),

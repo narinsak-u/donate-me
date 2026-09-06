@@ -46,6 +46,30 @@ watch(status, (s) => {
 })
 
 // ดึงข้อมูลสดของสตรีมเมอร์ — เรียกตอน mount และหลังจ่ายสำเร็จ
+const PAGE_SIZE = 10
+const recentHasMore = ref(false)
+const recentLoading = ref(false)
+
+// โหลดกำลังใจล่าสุด — reset=true = หน้าแรก (cursor ใหม่), ไม่งั้นต่อจากรายการสุดท้าย
+async function loadRecent(reset = false) {
+  if (!targetUsername.value) return
+  recentLoading.value = true
+  try {
+    const before = reset ? undefined : recent.value.at(-1)?.paid_at
+    const batch = await api.recentDonations(targetUsername.value, {
+      limit: PAGE_SIZE,
+      before,
+    })
+    if (reset) recent.value = batch
+    else recent.value.push(...batch)
+    recentHasMore.value = batch.length >= PAGE_SIZE
+  } catch {
+    /* ข้อมูลรอบหน้าจะลองใหม่ */
+  } finally {
+    recentLoading.value = false
+  }
+}
+
 async function refreshData() {
   if (!targetUsername.value) return
   try {
@@ -53,13 +77,9 @@ async function refreshData() {
     profile.value = p
     if (p.show_leaderboard) {
       // ข้อมูลจริงเท่านั้น — ไม่มีก็แสดง empty state ตาม ADR-0002
-      const [top, rec] = await Promise.all([
-        api.topDonators(targetUsername.value).then((r) => r.slice(0, 5)),
-        api.recentDonations(targetUsername.value),
-      ])
-      topDonators.value = top
-      recent.value = rec
+      topDonators.value = await api.topDonators(targetUsername.value).then((r) => r.slice(0, 5))
     }
+    await loadRecent(true)
   } catch {
     if (!profile.value) loadError.value = 'ไม่พบสตรีมเมอร์นี้ — ตรวจลิงก์อีกครั้ง'
   }
@@ -338,44 +358,52 @@ onUnmounted(() => clearTimeout(resetTimer))
         </template>
       </section>
 
-      <!-- ===== Social proof ===== -->
-      <section v-if="topDonators.length || recent.length" class="social">
-        <div class="card">
-          <div class="card-head">
-            <h2>🏆 ผู้สนับสนุนสูงสุดเดือนนี้</h2>
-            <span class="muted">Top 5</span>
-          </div>
-          <ol v-if="topDonators.length" class="board">
-            <li v-for="(t, i) in topDonators" :key="t.donor_name">
-              <span class="rank" :class="`rank-${i + 1}`">{{ i + 1 }}</span>
-              <div class="board-info">
-                <b>{{ t.donor_name }}</b>
-                <span>{{ t.count }} ครั้ง</span>
-              </div>
-              <span class="board-amount">฿{{ t.total.toLocaleString() }}</span>
-            </li>
-          </ol>
-          <p v-else class="muted empty">ยังไม่มีข้อมูล — เป็นคนแรกที่สนับสนุนสิ!</p>
+      <!-- ===== Social proof: Top 5 (บน) ===== -->
+      <section v-if="topDonators.length" class="card">
+        <div class="card-head">
+          <h2>🏆 ผู้สนับสนุนสูงสุดเดือนนี้</h2>
+          <span class="muted">Top 5</span>
         </div>
+        <ol class="board">
+          <li v-for="(t, i) in topDonators" :key="t.donor_name">
+            <span class="rank" :class="`rank-${i + 1}`">{{ i + 1 }}</span>
+            <div class="board-info">
+              <b>{{ t.donor_name }}</b>
+              <span>{{ t.count }} ครั้ง</span>
+            </div>
+            <span class="board-amount">฿{{ t.total.toLocaleString() }}</span>
+          </li>
+        </ol>
+      </section>
 
-        <div class="card">
-          <div class="card-head">
-            <h2>⚡ กำลังใจล่าสุด</h2>
-            <span class="badge badge-green">● สด</span>
-          </div>
-          <div v-if="recent.length" class="feed">
-            <div v-for="(r, i) in recent" :key="i" class="feed-item">
-              <span class="feed-icon">{{ ['❤️', '⭐', '⚡', '💜', '🎉'][i] ?? '💗' }}</span>
-              <div>
-                <b>{{ r.donor_name }}</b>
-                <em class="feed-amt">฿{{ r.amount.toLocaleString() }}</em>
-                <span class="muted small">· {{ timeAgo(r.paid_at) }}</span>
-                <p v-if="r.message">"{{ r.message }}"</p>
-              </div>
+      <!-- ===== Social proof: กำลังใจล่าสุด + โหลดเพิ่ม (ล่าง) ===== -->
+      <section v-if="recent.length || profile" class="card">
+        <div class="card-head">
+          <h2>⚡ กำลังใจล่าสุด</h2>
+          <span class="badge badge-green">● สด</span>
+        </div>
+        <div v-if="recent.length" class="feed">
+          <div v-for="(r, i) in recent" :key="`${r.donor_name}-${r.paid_at}-${i}`" class="feed-item">
+            <span class="feed-icon">{{ ['❤️', '⭐', '⚡', '💜', '🎉'][i % 5] }}</span>
+            <div>
+              <b>{{ r.donor_name }}</b>
+              <em class="feed-amt">฿{{ r.amount.toLocaleString() }}</em>
+              <span class="muted small">· {{ timeAgo(r.paid_at) }}</span>
+              <p v-if="r.message">"{{ r.message }}"</p>
             </div>
           </div>
-          <p v-else class="muted empty">ยังไม่มีรายการ — เป็นคนแรกที่ส่งกำลังใจสิ!</p>
         </div>
+        <p v-else class="muted empty">ยังไม่มีรายการ — เป็นคนแรกที่ส่งกำลังใจสิ!</p>
+
+        <button
+          v-if="recentHasMore"
+          class="btn-ghost more-btn"
+          :disabled="recentLoading"
+          @click="loadRecent()"
+        >
+          {{ recentLoading ? 'กำลังโหลด...' : '⬇ โหลดกำลังใจเพิ่มอีก' }}
+        </button>
+        <p v-else-if="recent.length >= PAGE_SIZE" class="muted small more-end">แสดงครบทุกรายการแล้ว · รวม {{ recent.length }} รายการ</p>
       </section>
 
       <footer class="footer">
@@ -649,10 +677,13 @@ textarea { resize: vertical; }
 .result h2 { font-size: 24px; margin-bottom: 6px; }
 .reset-note { margin-top: 14px; }
 
-/* social proof */
-.social { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
-.social .card { padding: 22px; }
-.board { list-style: none; display: grid; gap: 8px; }
+/* social proof: สอง section แนวตั้งเต็มความกว้าง (Top 5 บน / กำลังใจล่าสุด ลงล่าง) */
+.board {
+  list-style: none;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr 1fr;
+}
 .board li {
   display: flex;
   align-items: center;
@@ -662,6 +693,8 @@ textarea { resize: vertical; }
   border: 1px solid var(--border);
   background: var(--bg-input);
 }
+.more-btn { width: 100%; margin-top: 14px; justify-content: center; }
+.more-end { text-align: center; margin-top: 14px; }
 .rank {
   width: 28px;
   height: 28px;
@@ -730,7 +763,7 @@ textarea { resize: vertical; }
   .sound-chips { grid-template-columns: 1fr 1fr; }
   .name-row { flex-direction: column; align-items: stretch; gap: 8px; }
   .anon { margin-bottom: 0; justify-content: flex-end; }
-  .social { grid-template-columns: 1fr; }
+  .board { grid-template-columns: 1fr; }
   .cta { display: none; }
   .sticky-cta {
     display: block;

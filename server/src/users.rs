@@ -146,18 +146,32 @@ pub struct RecentDonation {
     pub paid_at: i64,
 }
 
-/// GET /api/u/:username/recent — โดเนตล่าสุด 5 รายการ (ข้ามข้อความที่ซ่อน) สำหรับ live feed
+#[derive(Deserialize)]
+pub struct RecentQuery {
+    /// จำนวนต่อหน้า (default 10, สูงสุด 50)
+    limit: Option<i64>,
+    /// cursor: เอาเฉพาะรายการ "ก่อน" เวลานี้ (paid_at ของรายการสุดท้ายที่ client มี)
+    before: Option<i64>,
+}
+
+/// GET /api/u/:username/recent — โดเนตล่าสุดแบบแบ่งหน้า (cursor = เวลาชำระ)
+/// ใช้สำหรับ live feed + ปุ่ม "โหลดเพิ่ม" บนหน้าโดเนต (ข้ามข้อความที่ซ่อน)
 pub async fn recent_donations(
     State(state): State<AppState>,
     Path(username): Path<String>,
+    axum::extract::Query(q): axum::extract::Query<RecentQuery>,
 ) -> Result<Json<Vec<RecentDonation>>, (StatusCode, String)> {
+    let limit = q.limit.unwrap_or(10).clamp(1, 50);
     let rows = sqlx::query(
         "SELECT d.donor_name, d.amount, d.message, COALESCE(d.paid_at, d.created_at) t
          FROM donations d JOIN users u ON u.id = d.user_id
-         WHERE u.username = ? AND d.status = 'paid' AND d.hidden = 0
-         ORDER BY t DESC LIMIT 5",
+         WHERE u.username = ?1 AND d.status = 'paid' AND d.hidden = 0
+           AND (?2 IS NULL OR COALESCE(d.paid_at, d.created_at) < ?2)
+         ORDER BY t DESC LIMIT ?3",
     )
     .bind(username.to_lowercase())
+    .bind(q.before)
+    .bind(limit)
     .fetch_all(&state.db)
     .await
     .map_err(db_err)?;
