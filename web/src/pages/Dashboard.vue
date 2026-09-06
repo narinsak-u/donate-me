@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { api, getToken, getUser, type PublicUser, type Settings } from '../api/auth'
+import { api, clearSession, getToken, getUser, type PublicUser, type Settings } from '../api/auth'
 import { dashApi, type DonationItem, type Stats } from '../api/dashboard'
 import { applyTheme } from '../theme'
 import DonationChart from '../components/DonationChart.vue'
@@ -26,6 +26,7 @@ const totalPages = ref(1)
 const settings = ref<Settings | null>(null)
 const soundFile = ref<File | null>(null)
 const soundUrl = ref('')
+const loadError = ref('')
 
 onMounted(async () => {
   applyTheme()
@@ -42,10 +43,27 @@ onMounted(async () => {
     donateLink.value = `${location.origin}/u/${user.value.username}`
     overlayUrl.value = `${location.origin}/overlay.html?token=${getToken() ?? ''}`
   }
-  const [s, st] = await Promise.all([dashApi.stats(), api.getSettings()])
-  stats.value = s
-  settings.value = st
-  await loadHistory()
+  // โหลดอิสระจากกัน — stats ล่มอย่างเดียวต้องไม่ทำให้แท็บตั้งค่าว่าง (และกลับกัน)
+  const [s, st] = await Promise.allSettled([dashApi.stats(), api.getSettings()])
+  if (s.status === 'fulfilled') stats.value = s.value
+  if (st.status === 'fulfilled') settings.value = st.value
+  const failReason: unknown =
+    s.status === 'rejected' ? s.reason : st.status === 'rejected' ? st.reason : undefined
+  if (failReason) {
+    const failed = failReason as Error & { status?: number }
+    // token ชี้บัญชีที่ไม่มีอยู่แล้ว (เช่น DB ถูก seed ใหม่) → พาไปล็อกอินใหม่
+    if (failed.status === 401 || failed.status === 404) {
+      clearSession()
+      router.push('/auth')
+      return
+    }
+    loadError.value = 'โหลดข้อมูล Dashboard ไม่สำเร็จ — ลองรีเฟรชหน้าอีกครั้ง'
+  }
+  try {
+    await loadHistory()
+  } catch {
+    /* ประวัติโหลดไม่ได้ไม่ถือว่าทั้งหน้าพัง */
+  }
 })
 
 async function loadHistory() {
@@ -238,6 +256,7 @@ const themeOptions = [
       </header>
 
       <main class="content">
+        <p v-if="loadError" class="load-error" role="alert">{{ loadError }}</p>
         <!-- ===== Overview ===== -->
         <template v-if="tab === 'overview' && stats">
           <section class="welcome">
@@ -608,6 +627,14 @@ const themeOptions = [
 .profile-info span { display: block; font-size: 11px; color: var(--emerald); }
 
 .content { padding: 24px 28px 48px; display: grid; gap: 18px; max-width: 1220px; }
+.load-error {
+  padding: 14px 18px;
+  border-radius: var(--radius-md);
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 13.5px;
+  font-weight: 600;
+}
 
 /* welcome */
 .welcome {
