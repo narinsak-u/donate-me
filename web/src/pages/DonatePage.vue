@@ -5,6 +5,7 @@ import { api, type PublicProfile, type TopDonator, type RecentDonation, type Sou
 import { applyTheme } from '../theme'
 import { useDonationWatch } from '../composables/useDonationWatch'
 import SiteTopbar from '../components/SiteTopbar.vue'
+import SlipUpload from '../components/SlipUpload.vue'
 
 const props = defineProps<{ username?: string }>()
 const route = useRoute()
@@ -30,7 +31,7 @@ const error = ref('')
 
 // ---------- สถานะหน้า: form → pay → paid/failed (in-place swap, ADR-0001) ----------
 const stage = ref<'form' | 'pay' | 'paid' | 'failed'>('form')
-const current = ref<{ id: string; qrUrl: string; payUrl: string; amount: number; sound: SoundKind; name: string } | null>(null)
+const current = ref<{ id: string; qrUrl: string; payUrl: string; amount: number; sound: SoundKind; name: string; mode: string } | null>(null)
 const { status, countdown, start, stop } = useDonationWatch()
 let resetTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -105,6 +106,18 @@ const goalPct = computed(() => {
 const hasGoal = computed(() => !!profile.value && profile.value.goal_amount > 0)
 
 const displayName = computed(() => profile.value?.display_name ?? 'Donate Me')
+// เหตุผลที่สลิปถูกปฏิเสธ (status เปลี่ยนเป็น rejected แล้ว — composable หยุด poll ตอนนั้น)
+const statusNote = ref('')
+watch(status, async (s) => {
+  if (s === 'rejected' && current.value) {
+    try {
+      const res = await api.getDonation(current.value.id)
+      statusNote.value = res.review_note
+    } catch {
+      /* เหตุผลไม่จำเป็นต้องมี */
+    }
+  }
+})
 const initial = computed(() => {
   const n = profile.value?.display_name
   return n ? n[0] : '🎮'
@@ -150,6 +163,7 @@ async function submit() {
       amount: amount.value,
       sound: sound.value,
       name: donorName,
+      mode: res.mode,
     }
     start(res.id, { sound: sound.value, name: donorName, amount: amount.value, message: message.value })
     stage.value = 'pay'
@@ -217,7 +231,9 @@ onUnmounted(() => clearTimeout(resetTimer))
         <template v-if="stage === 'form'">
           <div class="card-head">
             <h2>ส่งกำลังใจให้{{ profile ? displayName : 'สตรีมเมอร์' }}</h2>
-            <span class="badge badge-pink">PromptPay</span>
+            <span class="badge" :class="profile?.accepts_slip ? 'badge-green' : 'badge-pink'">
+              {{ profile?.accepts_slip ? 'โอนตรง 0% ค่าธรรมเนียม' : 'PromptPay' }}
+            </span>
           </div>
 
           <label class="lbl">จำนวนเงิน (บาท)</label>
@@ -322,9 +338,21 @@ onUnmounted(() => clearTimeout(resetTimer))
             <div class="qr-amount">฿{{ current.amount.toLocaleString() }}.00</div>
           </div>
 
+          <!-- โอนตรง: เงินเข้าบัญชีสตรีมเมอร์เลย — แนบสลิปเพื่อยืนยัน -->
+          <template v-if="current.mode === 'direct'">
+            <SlipUpload :donation-id="current.id" />
+            <p v-if="status === 'awaiting_review'" class="review-note" role="status">
+              🕒 ได้รับสลิปแล้ว — รอเจ้าของสตรีมตรวจสอบ (หน้านี้จะเฉลิมฉลองให้ทันทีที่อนุมัติ)
+            </p>
+          </template>
+
           <div class="expire-box">
             <b>⏳ QR หมดอายุใน {{ countdown }} นาที</b>
-            <p>จ่ายสำเร็จเมื่อไหร่ หน้านี้จะเฉลิมฉลองให้ทันที และ Alert จะเด้งในฉากสตรีมภายในไม่กี่วินาที</p>
+            <p>
+              {{ current.mode === 'direct'
+                ? 'เงินโอนเข้าบัญชีของสตรีมเมอร์โดยตรง ไม่ผ่านเว็บเรา — โอนแล้วแนบสลิปได้เลย'
+                : 'จ่ายสำเร็จเมื่อไหร่ หน้านี้จะเฉลิมฉลองให้ทันที และ Alert จะเด้งในฉากสตรีมภายในไม่กี่วินาที' }}
+            </p>
           </div>
 
           <div class="actions">
@@ -333,7 +361,7 @@ onUnmounted(() => clearTimeout(resetTimer))
             </a>
             <button class="btn-ghost" @click="backToForm">← ยกเลิก</button>
           </div>
-          <p class="hint">ระบบจำลอง — ยังไม่มีการตัดเงินจริง</p>
+          <p class="hint">{{ current.mode === 'mock' ? 'ระบบจำลอง — ยังไม่มีการตัดเงินจริง' : 'โอนตรงเข้าบัญชีสตรีมเมอร์ ไม่มีค่าธรรมเนียมเพิ่ม' }}</p>
         </template>
 
         <!-- สำเร็จ -->
@@ -347,12 +375,13 @@ onUnmounted(() => clearTimeout(resetTimer))
           </div>
         </template>
 
-        <!-- ไม่สำเร็จ / หมดอายุ -->
+        <!-- ไม่สำเร็จ / หมดอายุ / สลิปถูกปฏิเสธ -->
         <template v-else>
           <div class="result">
-            <div class="big">⌛</div>
-            <h2>QR หมดอายุหรือรายการไม่สำเร็จ</h2>
-            <p class="pay-sub">ไม่มีการตัดเงิน — ลองสร้าง QR ใหม่ได้เลย</p>
+            <div class="big">{{ status === 'rejected' ? '🚫' : '⌛' }}</div>
+            <h2>{{ status === 'rejected' ? 'สลิปถูกปฏิเสธ' : 'QR หมดอายุหรือรายการไม่สำเร็จ' }}</h2>
+            <p v-if="status === 'rejected' && statusNote" class="pay-sub">เหตุผล: {{ statusNote }}</p>
+            <p class="pay-sub">ไม่มีการตัดเงินผ่านเว็บเรา — ลองสร้าง QR ใหม่ได้เลย</p>
             <button class="btn-primary" @click="backToForm">← กลับไปโดเนตใหม่</button>
           </div>
         </template>
@@ -625,6 +654,17 @@ textarea { resize: vertical; }
 
 /* QR */
 .pay-sub { color: var(--text-dim); font-size: 14px; line-height: 1.6; }
+.review-note {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: var(--emerald);
+  font-size: 13px;
+  text-align: center;
+  line-height: 1.6;
+}
 .qr-box {
   max-width: 300px;
   margin: 18px auto 0;

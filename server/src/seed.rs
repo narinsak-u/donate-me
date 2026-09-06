@@ -22,17 +22,19 @@ struct SeedStreamer {
     leaderboard: bool,
     theme: &'static str,
     donations: usize,
+    /// เบอร์พร้อมเพย์รับโอนตรง — ว่าง = ใช้ช่องทาง mock (QR จำลอง) เหมือนเดิม
+    promptpay: &'static str,
 }
 
 const STREAMERS: &[SeedStreamer] = &[
-    SeedStreamer { username: "peachgaming", display_name: "พีชแกมมิ่ง", goal: 35000, tts: true, leaderboard: true, theme: "pink", donations: 80 },
-    SeedStreamer { username: "mewcraft", display_name: "มิ้วคราฟต์", goal: 18000, tts: true, leaderboard: true, theme: "green", donations: 60 },
-    SeedStreamer { username: "ninzastar", display_name: "นินจาสตาร์", goal: 10000, tts: false, leaderboard: true, theme: "blue", donations: 45 },
-    SeedStreamer { username: "fahsaiplay", display_name: "ฟ้าใสเพลย์", goal: 16000, tts: true, leaderboard: true, theme: "pink", donations: 35 },
-    SeedStreamer { username: "bankoverload", display_name: "แบงค์โอเวอร์โหลด", goal: 0, tts: false, leaderboard: true, theme: "dark", donations: 28 },
-    SeedStreamer { username: "kaitom99", display_name: "ไก่ต้ม 99", goal: 3500, tts: true, leaderboard: true, theme: "green", donations: 22 },
-    SeedStreamer { username: "pluemch", display_name: "ปลื้มช์", goal: 8000, tts: true, leaderboard: false, theme: "blue", donations: 40 },
-    SeedStreamer { username: "gunzgg", display_name: "กันซ์ GG", goal: 26000, tts: true, leaderboard: true, theme: "pink", donations: 70 },
+    SeedStreamer { username: "peachgaming", display_name: "พีชแกมมิ่ง", goal: 35000, tts: true, leaderboard: true, theme: "pink", donations: 80, promptpay: "0812345001" },
+    SeedStreamer { username: "mewcraft", display_name: "มิ้วคราฟต์", goal: 18000, tts: true, leaderboard: true, theme: "green", donations: 60, promptpay: "0812345002" },
+    SeedStreamer { username: "ninzastar", display_name: "นินจาสตาร์", goal: 10000, tts: false, leaderboard: true, theme: "blue", donations: 45, promptpay: "0812345003" },
+    SeedStreamer { username: "fahsaiplay", display_name: "ฟ้าใสเพลย์", goal: 16000, tts: true, leaderboard: true, theme: "pink", donations: 35, promptpay: "" },
+    SeedStreamer { username: "bankoverload", display_name: "แบงค์โอเวอร์โหลด", goal: 0, tts: false, leaderboard: true, theme: "dark", donations: 28, promptpay: "" },
+    SeedStreamer { username: "kaitom99", display_name: "ไก่ต้ม 99", goal: 3500, tts: true, leaderboard: true, theme: "green", donations: 22, promptpay: "0812345006" },
+    SeedStreamer { username: "pluemch", display_name: "ปลื้มช์", goal: 8000, tts: true, leaderboard: false, theme: "blue", donations: 40, promptpay: "" },
+    SeedStreamer { username: "gunzgg", display_name: "กันซ์ GG", goal: 26000, tts: true, leaderboard: true, theme: "pink", donations: 70, promptpay: "0812345008" },
 ];
 
 const DONOR_NAMES: &[&str] = &[
@@ -115,14 +117,15 @@ pub async fn run(db: &SqlitePool, force: bool) {
         }
 
         if let Err(e) = sqlx::query(
-            "INSERT INTO settings (user_id, goal_amount, tts_enabled, show_leaderboard, theme, alert_position)
-             VALUES (?, ?, ?, ?, ?, 'middle')",
+            "INSERT INTO settings (user_id, goal_amount, tts_enabled, show_leaderboard, theme, alert_position, promptpay_id)
+             VALUES (?, ?, ?, ?, ?, 'middle', ?)",
         )
         .bind(&uid)
         .bind(s.goal)
         .bind(s.tts as i64)
         .bind(s.leaderboard as i64)
         .bind(s.theme)
+        .bind(s.promptpay)
         .execute(db)
         .await
         {

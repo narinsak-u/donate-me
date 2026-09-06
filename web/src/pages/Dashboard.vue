@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, clearSession, getToken, getUser, type PublicUser, type Settings } from '../api/auth'
-import { dashApi, type DonationItem, type Stats } from '../api/dashboard'
+import { dashApi, type DonationItem, type SlipItem, type Stats } from '../api/dashboard'
 import { applyTheme } from '../theme'
 import DonationChart from '../components/DonationChart.vue'
 import WalletTab from '../components/WalletTab.vue'
@@ -10,7 +10,7 @@ import WalletTab from '../components/WalletTab.vue'
 const router = useRouter()
 const route = useRoute()
 const user = ref<PublicUser | null>(getUser())
-const tab = ref<'overview' | 'donations' | 'settings' | 'wallet'>('overview')
+const tab = ref<'overview' | 'donations' | 'slips' | 'settings' | 'wallet'>('overview')
 const donateLink = ref('')
 const copied = ref(false)
 const overlayUrl = ref('')
@@ -28,11 +28,63 @@ const soundFile = ref<File | null>(null)
 const soundUrl = ref('')
 const loadError = ref('')
 
+// ---------- Phase 7: คิวสลิป (โอนตรง) ----------
+const slips = ref<SlipItem[]>([])
+const slipBusy = ref('') // id ที่กำลังกดอนุมัติ/ปฏิเสธ
+const rejectTarget = ref<SlipItem | null>(null)
+const rejectNote = ref('')
+const slipsCount = computed(() => slips.value.filter((s) => s.status === 'awaiting_review').length)
+
+async function loadSlips() {
+  try {
+    slips.value = await dashApi.slips()
+  } catch {
+    /* โหลดคิวไม่ได้ไม่กระทบแท็บอื่น */
+  }
+}
+
+async function approve(s: SlipItem) {
+  slipBusy.value = s.id
+  try {
+    await dashApi.approveSlip(s.id)
+    s.status = 'paid'
+  } catch (e) {
+    alert(e instanceof Error ? e.message : 'อนุมัติไม่สำเร็จ')
+  } finally {
+    slipBusy.value = ''
+  }
+}
+
+function openReject(s: SlipItem) {
+  rejectTarget.value = s
+  rejectNote.value = ''
+}
+
+async function confirmReject() {
+  const s = rejectTarget.value
+  if (!s) return
+  slipBusy.value = s.id
+  try {
+    await dashApi.rejectSlip(s.id, rejectNote.value)
+    s.status = 'rejected'
+    s.review_note = rejectNote.value
+    rejectTarget.value = null
+  } catch (e) {
+    alert(e instanceof Error ? e.message : 'ปฏิเสธไม่สำเร็จ')
+  } finally {
+    slipBusy.value = ''
+  }
+}
+
+/// ตั้งค่าบัญชีรับเงินโอนตรงในแท็บ settings ทำงานผ่าน save() เดิม (settings promptpay_id ฯลฯ)
+const testQrAmount = ref(20)
+const ppValid = computed(() => /^(0\d{9}|\d{13})$/.test(settings.value?.promptpay_id.replace(/[-\s]/g, '') ?? ''))
+
 onMounted(async () => {
   applyTheme()
   // เปิดแท็บตาม ?tab= (เช่น ลิงก์ "คู่มือสตรีมเมอร์" → ?tab=settings)
   const q = route.query.tab
-  if (typeof q === 'string' && ['overview', 'donations', 'settings', 'wallet'].includes(q)) {
+  if (typeof q === 'string' && ['overview', 'donations', 'slips', 'settings', 'wallet'].includes(q)) {
     tab.value = q as typeof tab.value
   }
   if (!getToken()) {
@@ -64,6 +116,11 @@ onMounted(async () => {
   } catch {
     /* ประวัติโหลดไม่ได้ไม่ถือว่าทั้งหน้าพัง */
   }
+  void loadSlips()
+  // คิวสลิป: ดึงใหม่ทุก 20 วิ เมื่ออยู่แท็บคิว (มีคนแนบสลิปเข้ามาเอง)
+  setInterval(() => {
+    if (tab.value === 'slips') void loadSlips()
+  }, 20_000)
 })
 
 async function loadHistory() {
@@ -189,6 +246,7 @@ const goalPct = computed(() =>
 const navItems = [
   { key: 'overview', icon: '📊', label: 'ภาพรวม (Dashboard)' },
   { key: 'donations', icon: '🧾', label: 'ประวัติโดเนต' },
+  { key: 'slips', icon: '🧿', label: 'คิวสลิป (โอนตรง)' },
   { key: 'settings', icon: '🔔', label: 'ตั้งค่าแจ้งเตือน (Alerts)' },
   { key: 'wallet', icon: '💰', label: 'กระเป๋าเงิน & ถอน' },
 ] as const
@@ -223,9 +281,10 @@ const themeOptions = [
           v-for="n in navItems"
           :key="n.key"
           :class="{ active: tab === n.key }"
-          @click="tab = n.key"
+          @click="tab = n.key; n.key === 'slips' && loadSlips()"
         >
           <i>{{ n.icon }}</i> {{ n.label }}
+          <span v-if="n.key === 'slips' && slipsCount" class="slip-badge">{{ slipsCount }}</span>
         </button>
       </nav>
 
@@ -405,6 +464,60 @@ const themeOptions = [
           </section>
         </template>
 
+        <!-- ===== คิวสลิป (โอนตรง) ===== -->
+        <template v-if="tab === 'slips'">
+          <section class="card">
+            <div class="card-head">
+              <h2>🧿 คิวสลิป — โอนเข้าบัญชีคุณตรง</h2>
+              <span class="badge" :class="slipsCount ? 'badge-pink' : 'badge-green'">
+                {{ slipsCount ? `รอตรวจ ${slipsCount} รายการ` : 'ไม่มีค้างตรวจ' }}
+              </span>
+            </div>
+            <p class="muted" style="margin-bottom: 14px">
+              ผู้ชมโอนเงินเข้าพร้อมเพย์ของคุณโดยตรง (เงินไม่ผ่านเว็บ) แล้วแนบสลิป — ตรวจกับแอปธนาคารแล้วกดอนุมัติ Alert จะเด้งบนจอทันที
+            </p>
+
+            <div v-if="slips.length" class="slip-queue">
+              <div v-for="s in slips" :key="s.id" class="slip-row" :class="{ done: s.status !== 'awaiting_review' }">
+                <a v-if="s.has_image" :href="dashApi.slipImageUrl(s.id)" target="_blank" class="slip-thumb" title="เปิดรูปสลิปเต็ม">
+                  <img :src="dashApi.slipImageUrl(s.id)" alt="รูปสลิป" loading="lazy" />
+                </a>
+                <div v-else class="slip-thumb empty">–</div>
+                <div class="slip-info">
+                  <b>{{ s.donor_name }}</b>
+                  <span class="slip-msg">{{ s.message || '(ไม่มีข้อความ)' }}</span>
+                  <span class="muted small">แนบสลิป {{ s.slip_at ? fmtDate(s.slip_at) : '-' }} · เสียง {{ soundLabel(s.sound) }}</span>
+                </div>
+                <b class="slip-amount">฿{{ s.amount.toLocaleString() }}</b>
+                <div v-if="s.status === 'awaiting_review'" class="row-actions">
+                  <button class="btn-primary" :disabled="slipBusy === s.id" @click="approve(s)">
+                    {{ slipBusy === s.id ? '...' : '✓ อนุมัติ' }}
+                  </button>
+                  <button class="btn-ghost" :disabled="slipBusy === s.id" @click="openReject(s)">✕ ปฏิเสธ</button>
+                </div>
+                <div v-else class="slip-verdict" :class="s.status === 'paid' ? 'ok' : 'no'">
+                  {{ s.status === 'paid' ? '✓ อนุมัติแล้ว' : '✕ ปฏิเสธ' }}
+                  <small v-if="s.review_note">{{ s.review_note }}</small>
+                </div>
+              </div>
+            </div>
+            <p v-else class="muted center" style="padding: 28px 0">
+              ยังไม่มีสลิปเข้า — เมื่อผู้ชมโอนตรงและแนบสลิป รายการจะขึ้นที่นี่
+            </p>
+          </section>
+
+          <!-- กล่องยืนยันการปฏิเสธ -->
+          <section v-if="rejectTarget" class="card reject-box">
+            <h2>ปฏิเสธสลิปของ {{ rejectTarget.donor_name }} (฿{{ rejectTarget.amount.toLocaleString() }})</h2>
+            <p class="muted small" style="margin: 6px 0 12px">เหตุผลนี้ผู้ชมจะเห็นบนหน้าจ่ายเงิน — เช่น "ยอดไม่ตรง" / "ไม่พบรายการโอน"</p>
+            <input v-model="rejectNote" class="input" maxlength="200" placeholder="ระบุเหตุผล (ไม่บังคับ)" @keyup.enter="confirmReject" />
+            <div class="save-row" style="margin-top: 12px">
+              <button class="btn-primary" :disabled="slipBusy === rejectTarget.id" @click="confirmReject">ยืนยันปฏิเสธ</button>
+              <button class="btn-ghost" @click="rejectTarget = null">ยกเลิก</button>
+            </div>
+          </section>
+        </template>
+
         <!-- ===== Wallet ===== -->
         <template v-if="tab === 'wallet'">
           <WalletTab />
@@ -412,6 +525,57 @@ const themeOptions = [
 
         <!-- ===== Settings ===== -->
         <template v-if="tab === 'settings' && settings">
+          <section class="card">
+            <div class="card-head">
+              <h2>🏦 บัญชีรับเงิน (โอนตรง 0% ค่าธรรมเนียม)</h2>
+              <span class="badge" :class="ppValid ? 'badge-green' : 'badge-pink'">
+                {{ ppValid ? 'เปิดรับโอนตรงแล้ว' : 'ยังไม่เปิดใช้' }}
+              </span>
+            </div>
+            <p class="muted small" style="margin-bottom: 12px">
+              กรอกเบอร์พร้อมเพย์ — หน้าโดเนตจะสร้าง QR จริงให้ผู้ชมสแกนโอน<b>เข้าบัญชีคุณโดยตรง</b> (เงินไม่ผ่านเว็บ)
+              ผู้ชมแนบสลิป → คุณกดอนุมัติในแท็บ "คิวสลิป" → Alert เด้งบนจอ
+              <template v-if="!ppValid"> · <b>ไม่กรอก = ใช้ QR จำลอง (โหมดทดสอบ) เหมือนเดิม</b></template>
+            </p>
+            <div class="tts-opts">
+              <div>
+                <label>เบอร์พร้อมเพย์ (10 หลัก) หรือเลขบัตร (13 หลัก)</label>
+                <input
+                  v-model="settings.promptpay_id"
+                  class="input"
+                  inputmode="numeric"
+                  placeholder="0812345678"
+                  maxlength="13"
+                />
+              </div>
+              <div>
+                <label>ธนาคาร (ช่องทางสำรอง — ไม่บังคับ)</label>
+                <input v-model="settings.bank_name" class="input" placeholder="ธนาคารไทยพาณิชย์" maxlength="60" />
+              </div>
+              <div>
+                <label>เลขบัญชี</label>
+                <input v-model="settings.bank_no" class="input" inputmode="numeric" placeholder="4051234567" maxlength="30" />
+              </div>
+            </div>
+            <div v-if="ppValid" class="pp-test">
+              <div class="pp-qr">
+                <img
+                  :key="testQrAmount"
+                  :src="dashApi.promptpayQrUrl(testQrAmount)"
+                  alt="QR ทดสอบพร้อมเพย์ของคุณ"
+                  width="150"
+                  height="150"
+                />
+                <span class="muted small">QR จริงของคุณ (ทดลองสแกนได้)</span>
+              </div>
+              <div class="pp-test-side">
+                <label>ยอดทดสอบ (฿)</label>
+                <input v-model.number="testQrAmount" type="number" min="1" max="100000" class="input" style="max-width: 130px" />
+                <p class="muted small">เปลี่ยนยอดแล้ว QR จะรีเฟรช — ลองสแกนด้วยแอปธนาคารก่อนเปิดใช้จริง</p>
+              </div>
+            </div>
+          </section>
+
           <section class="card">
             <div class="card-head">
               <h2>📺 OBS Browser Source Integration</h2>
@@ -877,4 +1041,74 @@ code { background: var(--bg-card-2); padding: 1px 6px; border-radius: 5px; font-
 .status-pill.completed { color: var(--emerald); }
 .status-pill.rejected { color: var(--primary); }
 .toolbar .date { width: auto; padding: 10px 12px; }
+
+/* ===== Phase 7: คิวสลิป + บัญชีรับเงิน ===== */
+.slip-badge {
+  margin-left: auto;
+  background: var(--primary);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  min-width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+}
+.slip-queue { display: grid; gap: 10px; }
+.slip-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+}
+.slip-row.done { opacity: 0.72; }
+.slip-thumb {
+  width: 54px;
+  height: 70px;
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  cursor: zoom-in;
+}
+.slip-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.slip-thumb.empty { font-size: 20px; }
+.slip-info { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.slip-info b { font-size: 14.5px; }
+.slip-msg { font-size: 13px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slip-amount { color: var(--gold); font-size: 17px; font-weight: 700; font-family: var(--font-head); }
+.slip-row .row-actions { display: flex; gap: 8px; }
+.slip-verdict { display: flex; flex-direction: column; font-size: 13px; text-align: right; }
+.slip-verdict.ok { color: var(--emerald); }
+.slip-verdict.no { color: var(--primary); }
+.slip-verdict small { color: var(--text-faint); font-size: 11.5px; max-width: 200px; }
+.reject-box { border-color: rgba(244, 63, 94, 0.4); }
+.pp-test { display: flex; gap: 20px; margin-top: 16px; align-items: flex-start; flex-wrap: wrap; }
+.pp-qr {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  background: #fff;
+  padding: 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid #e2e8f0;
+}
+.pp-qr img { width: 150px; height: 150px; image-rendering: pixelated; }
+.pp-test-side { display: flex; flex-direction: column; gap: 8px; max-width: 260px; }
+
+@media (max-width: 640px) {
+  .slip-row { flex-wrap: wrap; }
+  .slip-amount { order: 3; }
+}
 </style>

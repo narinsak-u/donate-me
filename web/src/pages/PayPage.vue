@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { applyTheme } from '../theme'
+import { api } from '../api/auth'
 import { useDonationWatch } from '../composables/useDonationWatch'
 import SiteTopbar from '../components/SiteTopbar.vue'
+import SlipUpload from '../components/SlipUpload.vue'
 
 const props = defineProps<{ id: string }>()
 const route = useRoute()
@@ -17,14 +19,28 @@ const soundKind = ((route.query.sound as string) || 'chime') as 'chime' | 'coin'
 const donorName = (route.query.name as string) || 'ผู้สนับสนุน'
 
 const { status, countdown, start } = useDonationWatch()
+const reviewNote = ref('')
+const mode = ref<'mock' | 'direct' | 'omise' | string>((route.query.mode as string) || '')
 
 onMounted(() => {
   applyTheme()
   start(props.id, { sound: soundKind, name: donorName, amount: amount.value })
 })
 
-// จ่ายสำเร็จ → พากลับหน้าโดเนตเอง (ค้างไว้ให้อ่าน 8 วินาที)
-watch(status, (s) => {
+// โหมดไม่รู้จาก query (ลิงก์เก่า) → ถามสถานะครั้งเดียว
+void api.getDonation(props.id).then((res) => (mode.value = res.mode)).catch(() => {})
+
+// rejected → ดึงเหตุผล
+watch(status, async (s) => {
+  if (s === 'rejected') {
+    try {
+      const res = await api.getDonation(props.id)
+      reviewNote.value = res.review_note
+    } catch {
+      /* เหตุผลไม่จำเป็น */
+    }
+  }
+  // จ่ายสำเร็จ → ค้างไว้ให้อ่าน 8 วินาที
   if (s === 'paid') setTimeout(() => router.push('/'), 8000)
 })
 </script>
@@ -33,8 +49,8 @@ watch(status, (s) => {
   <div class="page">
     <SiteTopbar />
     <main class="shell">
-      <!-- รอชำระเงิน -->
-      <section v-if="status === null || status === 'pending'" class="card">
+      <!-- รอชำระเงิน / รอตรวจสลิป -->
+      <section v-if="status === null || status === 'pending' || status === 'awaiting_review'" class="card">
         <div class="card-head">
           <h2>สแกนเพื่อส่งกำลังใจ</h2>
           <span class="badge badge-pink">PromptPay</span>
@@ -50,16 +66,28 @@ watch(status, (s) => {
           <div class="qr-amount">฿{{ amount.toLocaleString() }}.00</div>
         </div>
 
+        <!-- โอนตรง: แนบสลิป -->
+        <template v-if="mode === 'direct'">
+          <SlipUpload v-if="status !== 'awaiting_review'" :donation-id="id" />
+          <p v-if="status === 'awaiting_review'" class="review-note" role="status">
+            🕒 ได้รับสลิปแล้ว — รอเจ้าของสตรีมตรวจสอบ หน้านี้จะเฉลิมฉลองทันทีที่อนุมัติ
+          </p>
+        </template>
+
         <div class="expire-box">
           <b>⏳ QR หมดอายุใน {{ countdown }} นาที</b>
-          <p>จ่ายสำเร็จเมื่อไหร่ หน้านี้จะเฉลิมฉลองให้ทันที และ Alert จะเด้งในฉากสตรีมภายในไม่กี่วินาที</p>
+          <p>
+            {{ mode === 'direct'
+              ? 'เงินโอนเข้าบัญชีของสตรีมเมอร์โดยตรง ไม่ผ่านเว็บเรา — โอนแล้วแนบสลิปได้เลย'
+              : 'จ่ายสำเร็จเมื่อไหร่ หน้านี้จะเฉลิมฉลองให้ทันที และ Alert จะเด้งในฉากสตรีมภายในไม่กี่วินาที' }}
+          </p>
         </div>
 
         <div class="actions">
           <a v-if="payUrl" :href="payUrl" target="_blank" class="btn-primary">🧪 จำลองการชำระเงิน</a>
           <button class="btn-ghost" @click="router.push('/')">← ยกเลิก</button>
         </div>
-        <p class="hint">ระบบจำลอง — ยังไม่มีการตัดเงินจริง</p>
+        <p class="hint">{{ mode === 'mock' ? 'ระบบจำลอง — ยังไม่มีการตัดเงินจริง' : 'โอนตรงเข้าบัญชีสตรีมเมอร์ ไม่มีค่าธรรมเนียมเพิ่ม' }}</p>
       </section>
 
       <!-- สำเร็จ -->
@@ -68,6 +96,15 @@ watch(status, (s) => {
         <h2>โดเนตสำเร็จ!</h2>
         <p class="sub">ขอบคุณมาก ๆ ที่สนับสนุน ❤️ Alert เด้งบนฉากสตรีมแล้ว</p>
         <div class="badge badge-green">จ่ายเงินสำเร็จ</div>
+      </section>
+
+      <!-- สลิปถูกปฏิเสธ -->
+      <section v-else-if="status === 'rejected'" class="card result failed">
+        <div class="big">🚫</div>
+        <h2>สลิปถูกปฏิเสธ</h2>
+        <p v-if="reviewNote" class="sub">เหตุผล: {{ reviewNote }}</p>
+        <p class="sub">ไม่มีการตัดเงินผ่านเว็บเรา — ลองโดเนตใหม่ได้เลย</p>
+        <button class="btn-primary" @click="router.push('/')">← กลับไปโดเนตใหม่</button>
       </section>
 
       <!-- ไม่สำเร็จ / หมดอายุ -->
@@ -123,6 +160,17 @@ h2 { font-size: 19px; }
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 .qr-amount { font-size: 22px; font-weight: 700; padding: 6px 0 18px; text-align: center; }
+.review-note {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: var(--emerald);
+  font-size: 13px;
+  text-align: center;
+  line-height: 1.6;
+}
 .expire-box {
   margin: 16px auto 0;
   max-width: 380px;

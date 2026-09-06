@@ -116,6 +116,9 @@ let settings: Settings = {
   tts_max_len: 120,
   tier_vip_amount: 100,
   tier_gold_amount: 500,
+  promptpay_id: '',
+  bank_name: '',
+  bank_no: '',
 }
 
 async function loadSettings() {

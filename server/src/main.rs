@@ -3,9 +3,11 @@ mod dashboard;
 mod mock_pay;
 mod og;
 mod payment;
+mod promptpay;
 mod rate_limit;
 mod sanitize;
 mod seed;
+mod slips;
 mod users;
 
 use axum::{
@@ -99,6 +101,8 @@ struct DonationCreated {
     id: String,
     qr_url: String,
     pay_url: String,
+    /// ช่องทางจ่าย: mock (จำลอง) | direct (โอนตรง + แนบสลิป) | omise (เกตเวย์)
+    mode: String,
 }
 
 #[derive(Serialize)]
@@ -106,6 +110,8 @@ struct DonationStatus {
     id: String,
     status: String,
     amount: i64,
+    mode: String,
+    review_note: String,
 }
 
 #[derive(Deserialize)]
@@ -149,14 +155,6 @@ async fn create_donation(
     let message = sanitize::mask_bad_words(&message);
 
     let id = random_id();
-
-    // Phase 6: สร้าง intent ชำระเงินกับ provider (mock = QR ปลอม, omise = PromptPay จริง)
-    let intent = state
-        .payment
-        .create_intent(body.amount, &id)
-        .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("สร้างรายการชำระเงินไม่สำเร็จ: {e}")))?;
-
     let now = now_millis();
 
     // หา user_id จาก username ปลายทาง
@@ -173,9 +171,46 @@ async fn create_donation(
         None => state.user_id.clone(),
     };
 
+    // Phase 7: เลือกช่องทางจ่ายต่อรายการ —
+    //   Omise (ตั้ง OMISE_SECRET_KEY) > โอนตรง+แนบสลิป (สตรีมเมอร์ตั้งเบอร์พร้อมเพย์) > Mock (dev)
+    let mut expires_at: Option<i64> = None;
+    let (intent, mode) = if !state.payment.is_mock() {
+        let i = state
+            .payment
+            .create_intent(body.amount, &id)
+            .await
+            .map_err(|e| (StatusCode::BAD_GATEWAY, format!("สร้างรายการชำระเงินไม่สำเร็จ: {e}")))?;
+        (i, "omise")
+    } else {
+        let pp: Option<String> = sqlx::query("SELECT promptpay_id FROM settings WHERE user_id = ?")
+            .bind(&target_user)
+            .fetch_optional(&state.db)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}")))?
+            .map(|r| r.get::<String, _>("promptpay_id"));
+        if pp.as_deref().map(promptpay::is_valid_id).unwrap_or(false) {
+            expires_at = Some(now + DIRECT_PAY_WINDOW_MS);
+            (
+                payment::PaymentIntent {
+                    provider_ref: format!("direct_{id}"),
+                    qr_url: format!("/qr/{id}"),
+                },
+                "direct",
+            )
+        } else {
+            (
+                payment::PaymentIntent {
+                    provider_ref: format!("mock_{id}"),
+                    qr_url: format!("/mock/qr/mock_{id}.png"),
+                },
+                "mock",
+            )
+        }
+    };
+
     sqlx::query(
-        "INSERT INTO donations (id, user_id, donor_name, amount, message, sound, status, payment_ref, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
+        "INSERT INTO donations (id, user_id, donor_name, amount, message, sound, status, payment_ref, created_at, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)",
     )
     .bind(&id)
     .bind(&target_user)
@@ -185,12 +220,13 @@ async fn create_donation(
     .bind(sound)
     .bind(&intent.provider_ref)
     .bind(now)
+    .bind(expires_at)
     .execute(&state.db)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}")))?;
 
-    // pay_url มีเฉพาะ mock (หน้าจำลองธนาคาร) — ฝั่ง omise จะสแกน QR ผ่านแอปธนาคารจริง
-    let pay_url = if state.payment.is_mock() {
+    // pay_url มีเฉพาะ mock (หน้าจำลองธนาคาร) — โอนตรง/omise สแกน QR ด้วยแอปธนาคารจริง
+    let pay_url = if mode == "mock" {
         format!("/mock/pay/{}", intent.provider_ref)
     } else {
         String::new()
@@ -202,6 +238,7 @@ async fn create_donation(
             qr_url: intent.qr_url,
             pay_url,
             id,
+            mode: mode.to_string(),
         }),
     ))
 }
@@ -210,19 +247,77 @@ async fn get_donation(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<DonationStatus>, (StatusCode, String)> {
+    // Lazy expiry: รายการโอนตรงที่ pending เกินกำหนด → expired ทันทีที่มีคนถามสถานะ
+    // (PayPage poll ทุกวินาทีอยู่แล้ว จึงไม่ต้องมี background job)
+    sqlx::query(
+        "UPDATE donations SET status = 'expired'
+         WHERE id = ? AND status = 'pending' AND expires_at IS NOT NULL AND expires_at < ?",
+    )
+    .bind(&id)
+    .bind(now_millis())
+    .execute(&state.db)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}")))?;
+
     let row = sqlx::query(
-        "SELECT id, donor_name, amount, message, sound, status, payment_ref FROM donations WHERE id = ?",
+        "SELECT id, donor_name, amount, message, sound, status, payment_ref, review_note FROM donations WHERE id = ?",
     )
     .bind(&id)
     .fetch_optional(&state.db)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}")))?;
     let row = row.ok_or((StatusCode::NOT_FOUND, "ไม่พบรายการโดเนต".into()))?;
+    let payment_ref: String = row.get("payment_ref");
+    let mode = if payment_ref.starts_with("direct_") {
+        "direct"
+    } else if payment_ref.starts_with("mock_") {
+        "mock"
+    } else {
+        "omise"
+    };
     Ok(Json(DonationStatus {
         id: row.get("id"),
         status: row.get("status"),
         amount: row.get("amount"),
+        mode: mode.to_string(),
+        review_note: row.get("review_note"),
     }))
+}
+
+/// ระยะเวลาให้โอน+แนบสลิปสำหรับช่องทางโอนตรง
+const DIRECT_PAY_WINDOW_MS: i64 = 15 * 60 * 1000;
+
+/// GET /qr/:id.png — PromptPay QR จริงของรายการโอนตรง (เบอร์สตรีมเมอร์ + ยอดฝังใน QR)
+async fn qr_png(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<impl axum::response::IntoResponse, (StatusCode, String)> {
+    let id_clean = id.trim_end_matches(".png");
+    if id_clean.len() != 32 || !id_clean.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err((StatusCode::NOT_FOUND, "ไม่พบรายการ".into()));
+    }
+    let row = sqlx::query(
+        "SELECT d.amount, s.promptpay_id
+         FROM donations d JOIN settings s ON s.user_id = d.user_id
+         WHERE d.id = ? AND d.payment_ref LIKE 'direct\\_%' ESCAPE '\\'
+           AND d.status IN ('pending', 'awaiting_review')",
+    )
+    .bind(id_clean)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}")))?;
+    let row = row.ok_or((StatusCode::NOT_FOUND, "ไม่พบรายการ".into()))?;
+    let amount: i64 = row.get("amount");
+    let pp: String = row.get("promptpay_id");
+    let normalized = promptpay::normalize_id(&pp)
+        .ok_or((StatusCode::INTERNAL_SERVER_ERROR, "promptpay_id ไม่ถูกต้อง".into()))?;
+
+    let png = promptpay::qr_png(&promptpay::payload(&normalized, amount * 100))
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    Ok((
+        [(axum::http::header::CONTENT_TYPE, "image/png")],
+        png,
+    ))
 }
 
 async fn mock_webhook(
@@ -462,6 +557,14 @@ async fn main() {
             )),
         )
         .route("/api/donate/{id}", get(get_donation))
+        .route(
+            "/api/donate/{id}/slip",
+            post(slips::upload_slip).layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                rate_limit::donate_limit,
+            )),
+        )
+        .route("/qr/{id}", get(qr_png))
         .route("/api/test-alert", post(test_alert))
         .route("/webhooks/omise", post(omise_webhook))
         .route(
@@ -492,6 +595,11 @@ async fn main() {
         .route("/api/me/wallet", get(dashboard::wallet))
         .route("/api/me/withdrawals", get(dashboard::list_withdrawals).post(dashboard::create_withdrawal))
         .route("/api/me/leaderboard", get(dashboard::my_leaderboard))
+        .route("/api/me/slips", get(slips::list_slips))
+        .route("/api/me/slips/{id}/image", get(slips::slip_image))
+        .route("/api/me/slips/{id}/approve", post(slips::approve_slip))
+        .route("/api/me/slips/{id}/reject", post(slips::reject_slip))
+        .route("/api/me/promptpay-qr", get(slips::promptpay_qr))
         .nest_service("/uploads", ServeDir::new("uploads"))
         .route("/events", get(events))
         .merge(if is_mock { mock_pay::router() } else { Router::new() })

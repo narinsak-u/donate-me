@@ -118,7 +118,8 @@ impl PaymentProvider {
     }
 }
 
-/// อัปเดตสถานะโดเนตแบบ idempotent + ป็อบอัพครั้งเดียว (ใช้ร่วมกับ mock webhook)
+/// อัปเดตสถานะโดเนตแบบ idempotent + ป็อบอัพครั้งเดียว
+/// (ใช้ร่วมกัน 3 ทาง: mock webhook, Omise webhook, อนุมัติสลิป — awaiting_review มีเฉพาะทางสลิป)
 pub async fn settle(
     db: &SqlitePool,
     tx: &tokio::sync::broadcast::Sender<std::sync::Arc<crate::DonationEvent>>,
@@ -126,7 +127,7 @@ pub async fn settle(
     new_status: &str,
 ) -> Result<(), String> {
     let rows = sqlx::query(
-        "UPDATE donations SET status = ?, paid_at = ? WHERE payment_ref = ? AND status = 'pending'",
+        "UPDATE donations SET status = ?, paid_at = ? WHERE payment_ref = ? AND status IN ('pending', 'awaiting_review')",
     )
     .bind(new_status)
     .bind(crate::now_millis())

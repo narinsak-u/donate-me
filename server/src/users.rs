@@ -25,6 +25,8 @@ pub struct PublicProfile {
     pub goal_raised: i64,
     pub theme: String,
     pub show_leaderboard: bool,
+    /// รับโอนตรง+แนบสลิป (สตรีมเมอร์ตั้งเบอร์พร้อมเพย์แล้ว)
+    pub accepts_slip: bool,
 }
 
 /// GET /api/u/:username — ข้อมูลที่หน้าโดเนตสาธารณะต้องใช้
@@ -33,7 +35,7 @@ pub async fn public_profile(
     Path(username): Path<String>,
 ) -> Result<Json<PublicProfile>, (StatusCode, String)> {
     let row = sqlx::query(
-        "SELECT u.username, u.display_name, s.goal_amount, s.theme, s.show_leaderboard,
+        "SELECT u.username, u.display_name, s.goal_amount, s.theme, s.show_leaderboard, s.promptpay_id,
                 COALESCE((SELECT SUM(d.amount) FROM donations d
                           WHERE d.user_id = u.id AND d.status = 'paid'), 0) AS goal_raised
          FROM users u LEFT JOIN settings s ON s.user_id = u.id
@@ -45,6 +47,7 @@ pub async fn public_profile(
     .map_err(db_err)?;
 
     let row = row.ok_or((StatusCode::NOT_FOUND, "ไม่พบสตรีมเมอร์คนนี้".into()))?;
+    let promptpay_id: Option<String> = row.get("promptpay_id");
     Ok(Json(PublicProfile {
         username: row.get("username"),
         display_name: row.get("display_name"),
@@ -52,6 +55,10 @@ pub async fn public_profile(
         goal_raised: row.get::<Option<i64>, _>("goal_raised").unwrap_or(0),
         theme: row.get::<Option<String>, _>("theme").unwrap_or_else(|| "pink".into()),
         show_leaderboard: row.get::<Option<i64>, _>("show_leaderboard").unwrap_or(1) != 0,
+        accepts_slip: promptpay_id
+            .as_deref()
+            .map(crate::promptpay::is_valid_id)
+            .unwrap_or(false),
     }))
 }
 
@@ -204,6 +211,10 @@ pub struct Settings {
     pub tts_max_len: i64,
     pub tier_vip_amount: i64,
     pub tier_gold_amount: i64,
+    // Phase 7: บัญชีรับเงินแบบโอนตรง (promptpay_id ว่าง = ใช้ช่องทาง mock/omise แทน)
+    pub promptpay_id: String,
+    pub bank_name: String,
+    pub bank_no: String,
 }
 
 #[derive(Deserialize)]
@@ -232,6 +243,12 @@ pub struct UpdateSettings {
     pub tier_vip_amount: Option<i64>,
     #[serde(default)]
     pub tier_gold_amount: Option<i64>,
+    #[serde(default)]
+    pub promptpay_id: Option<String>,
+    #[serde(default)]
+    pub bank_name: Option<String>,
+    #[serde(default)]
+    pub bank_no: Option<String>,
 }
 
 pub async fn get_settings(
@@ -284,8 +301,31 @@ pub async fn update_settings(
         return Err((StatusCode::BAD_REQUEST, "tier_vip_amount ต้องน้อยกว่า tier_gold_amount".into()));
     }
 
+    // Phase 7: บัญชีรับเงินโอนตรง — เบอร์/บัตร 10-13 หลัก, ธนาคารสำรองกรอกคู่กัน
+    let promptpay_id = body.promptpay_id.unwrap_or(cur.promptpay_id);
+    let promptpay_id = promptpay_id.trim().to_string();
+    if !promptpay_id.is_empty() && !crate::promptpay::is_valid_id(&promptpay_id) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "promptpay_id ต้องเป็นเบอร์โทร 10 หลัก หรือเลขบัตรประชาชน 13 หลัก".into(),
+        ));
+    }
+    let bank_name = body.bank_name.unwrap_or(cur.bank_name);
+    let bank_name = crate::sanitize::clean_text(&bank_name);
+    if bank_name.chars().count() > 60 {
+        return Err((StatusCode::BAD_REQUEST, "bank_name ยาวเกิน 60 ตัวอักษร".into()));
+    }
+    let bank_no = body.bank_no.unwrap_or(cur.bank_no);
+    let bank_no = bank_no.trim().to_string();
+    if !bank_no.is_empty() && (bank_no.len() > 30 || !bank_no.chars().all(|c| c.is_ascii_digit() || c == '-')) {
+        return Err((StatusCode::BAD_REQUEST, "bank_no ต้องเป็นตัวเลข (และขีด) ไม่เกิน 30 ตัว".into()));
+    }
+    if bank_name.is_empty() != bank_no.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "กรอกธนาคารและเลขบัญชีให้ครบทั้งคู่ (หรือเว้นว่างทั้งคู่)".into()));
+    }
+
     sqlx::query(
-        "UPDATE settings SET theme = ?, goal_amount = ?, alert_duration_sec = ?, tts_enabled = ?, alert_text = ?, alert_image_url = ?, show_leaderboard = ?, alert_position = ?, tts_speed = ?, tts_max_len = ?, tier_vip_amount = ?, tier_gold_amount = ? WHERE user_id = ?",
+        "UPDATE settings SET theme = ?, goal_amount = ?, alert_duration_sec = ?, tts_enabled = ?, alert_text = ?, alert_image_url = ?, show_leaderboard = ?, alert_position = ?, tts_speed = ?, tts_max_len = ?, tier_vip_amount = ?, tier_gold_amount = ?, promptpay_id = ?, bank_name = ?, bank_no = ? WHERE user_id = ?",
     )
     .bind(&theme)
     .bind(goal_amount)
@@ -299,6 +339,9 @@ pub async fn update_settings(
     .bind(tts_max_len)
     .bind(tier_vip_amount)
     .bind(tier_gold_amount)
+    .bind(&promptpay_id)
+    .bind(&bank_name)
+    .bind(&bank_no)
     .bind(&user.user_id)
     .execute(&state.db)
     .await
@@ -310,7 +353,7 @@ pub async fn update_settings(
 
 async fn fetch_settings(state: &AppState, user_id: &str) -> Result<Settings, (StatusCode, String)> {
     let row = sqlx::query(
-        "SELECT theme, goal_amount, alert_duration_sec, tts_enabled, alert_text, alert_sound_url, alert_image_url, show_leaderboard, alert_position, tts_speed, tts_max_len, tier_vip_amount, tier_gold_amount FROM settings WHERE user_id = ?",
+        "SELECT theme, goal_amount, alert_duration_sec, tts_enabled, alert_text, alert_sound_url, alert_image_url, show_leaderboard, alert_position, tts_speed, tts_max_len, tier_vip_amount, tier_gold_amount, promptpay_id, bank_name, bank_no FROM settings WHERE user_id = ?",
     )
     .bind(user_id)
     .fetch_optional(&state.db)
@@ -331,5 +374,8 @@ async fn fetch_settings(state: &AppState, user_id: &str) -> Result<Settings, (St
         tts_max_len: row.get("tts_max_len"),
         tier_vip_amount: row.get("tier_vip_amount"),
         tier_gold_amount: row.get("tier_gold_amount"),
+        promptpay_id: row.get("promptpay_id"),
+        bank_name: row.get("bank_name"),
+        bank_no: row.get("bank_no"),
     })
 }

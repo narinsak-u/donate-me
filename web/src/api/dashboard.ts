@@ -1,6 +1,6 @@
 // API ฝั่ง dashboard (Phase 3) — ตรงกับ server/src/dashboard.rs
 
-import { request } from './auth'
+import { getToken, request } from './auth'
 
 export interface DayPoint {
   day: string
@@ -51,6 +51,22 @@ export interface Withdrawal {
   paid_at: number | null
 }
 
+// ---------- Phase 7: คิวสลิป (โอนตรง) ----------
+
+export interface SlipItem {
+  id: string
+  donor_name: string
+  amount: number
+  message: string
+  sound: string
+  status: 'awaiting_review' | 'paid' | 'rejected' | string
+  has_image: boolean
+  created_at: number
+  slip_at: number | null
+  reviewed_at: number | null
+  review_note: string
+}
+
 export const dashApi = {
   stats: () => request<Stats>('/api/me/stats'),
   history: (q?: { query?: string; page?: number; from?: number; to?: number }) => {
@@ -93,4 +109,18 @@ export const dashApi = {
   withdrawals: () => request<Withdrawal[]>('/api/me/withdrawals'),
   requestWithdrawal: (body: { amount: number; bank_name: string; bank_account: string }) =>
     request<Withdrawal>('/api/me/withdrawals', { method: 'POST', body: JSON.stringify(body) }),
+  // คิวสลิป — อนุมัติแล้ว alert เด้งทันที, ปฏิเสธแนบเหตุผลให้ผู้ชมเห็น
+  slips: () => request<SlipItem[]>('/api/me/slips'),
+  /// <img> ส่ง header ไม่ได้ → ใช้ ?token= (extractor รองรับ)
+  slipImageUrl: (id: string) => `/api/me/slips/${id}/image?token=${encodeURIComponent(getToken() ?? '')}`,
+  approveSlip: (id: string) =>
+    request<{ ok: boolean; status: string }>(`/api/me/slips/${id}/approve`, { method: 'POST' }),
+  rejectSlip: (id: string, note: string) =>
+    request<{ ok: boolean; status: string }>(`/api/me/slips/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ note }),
+    }),
+  /// QR ทดสอบพร้อมเพย์ของตัวเอง — เป็น route ที่ต้อง auth จึงแนบ token ใน query
+  promptpayQrUrl: (amount: number) =>
+    `/api/me/promptpay-qr?amount=${amount}&token=${encodeURIComponent(getToken() ?? '')}`,
 }

@@ -83,12 +83,16 @@ export interface DonationCreated {
   id: string
   qr_url: string
   pay_url: string
+  /// ช่องทางจ่าย: mock (จำลอง) | direct (โอนตรง + แนบสลิป) | omise (เกตเวย์)
+  mode: 'mock' | 'direct' | 'omise' | string
 }
 
 export interface DonationStatusResponse {
   id: string
-  status: 'pending' | 'paid' | 'failed' | 'expired'
+  status: 'pending' | 'awaiting_review' | 'paid' | 'failed' | 'expired' | 'rejected'
   amount: number
+  mode: 'mock' | 'direct' | 'omise' | string
+  review_note: string
 }
 
 export interface PublicProfile {
@@ -98,6 +102,8 @@ export interface PublicProfile {
   goal_raised: number
   theme: string
   show_leaderboard: boolean
+  /// รับโอนตรง + แนบสลิป (สตรีมเมอร์ตั้งเบอร์พร้อมเพย์แล้ว)
+  accepts_slip: boolean
 }
 
 export interface StreamerSummary {
@@ -122,6 +128,10 @@ export interface Settings {
   tts_max_len: number
   tier_vip_amount: number
   tier_gold_amount: number
+  // บัญชีรับเงินโอนตรง (promptpay_id ว่าง = ใช้ช่องทาง mock/omise)
+  promptpay_id: string
+  bank_name: string
+  bank_no: string
 }
 
 export interface TopDonator {

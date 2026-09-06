@@ -4,8 +4,9 @@ import { playSound, primeTts, speakThai } from '../sounds'
 import { burstConfetti } from '../confetti'
 
 // ดูสถานะ Donation — ใช้ร่วมกันระหว่างแผง QR บนหน้าโดเนตกับหน้า /pay/:id (ADR-0001)
-// เรียก start() หนึ่งครั้งต่อ donation, หยุดเองเมื่อ status ออกจาก pending
-export type DonationStatus = 'pending' | 'paid' | 'failed' | 'expired'
+// เรียก start() หนึ่งครั้งต่อ donation, หยุดเองเมื่อจบ (paid/rejected/failed/expired)
+// awaiting_review = แนบสลิปแล้วรอเจ้าของตรวจ → poll ต่อ
+export type DonationStatus = 'pending' | 'awaiting_review' | 'paid' | 'failed' | 'expired' | 'rejected'
 
 // ข้อความเริ่มต้นที่จะถูกอ่าน กรณีผู้บริจาคไม่พิมพ์ข้อความ
 export const DEFAULT_DONOR_MSG = 'เป็นกำลังใจให้นะ'
@@ -52,7 +53,7 @@ export function useDonationWatch() {
       try {
         const res = await api.getDonation(id)
         status.value = res.status
-        if (res.status !== 'pending') {
+        if (res.status !== 'pending' && res.status !== 'awaiting_review') {
           stop()
           if (res.status === 'paid') celebrate(opts.sound, opts)
         }
