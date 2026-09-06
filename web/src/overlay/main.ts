@@ -1,17 +1,43 @@
 // Overlay สำหรับ OBS Browser Source — standalone ไม่ผ่าน SPA router
-// ใช้: /overlay.html?token=<JWT> — แสดงเฉพาะโดเนตของสตรีมเมอร์ที่ถือ token นั้น
+// ใช้: /overlay.html?token=<JWT>[&w=all|alert|leaderboard|goal|recent][&pos=tl|tr|bl|br]
 // ⚠️ ไม่ดึง token จาก localStorage (แท็บอื่นล็อกอินค้างจะทำให้ฟัง user ผิด)
 //    แบบไม่ใส่ token = ฟังโดเนตของ streamer เริ่มต้น (ต้องเปิด ALLOW_PUBLIC_OVERLAY ใน .env)
+// Phase 8: w= เลือกว่าจะ render วิดเจ็ตใด (all = เหมือนเดิม: alert+leaderboard)
+//          ping ทุก 10 วิ → dashboard เห็น "วิดเจ็ตออนไลน์"
 
 import { api, type DonationEvent, type Settings, type TopDonator } from '../api/auth'
 import { playSound, speakThai } from '../sounds'
 import { burstConfetti } from '../confetti'
 
-const token = new URLSearchParams(location.search).get('token') ?? ''
+const params = new URLSearchParams(location.search)
+const token = params.get('token') ?? ''
+// วิดเจ็ตที่จะแสดง: all | alert | leaderboard | goal | recent
+const WIDGET = (() => {
+  const w = (params.get('w') || 'all').toLowerCase()
+  return ['all', 'alert', 'leaderboard', 'goal', 'recent'].includes(w) ? w : 'all'
+})()
+const show = (part: 'alert' | 'lb' | 'goal' | 'recent') => {
+  if (WIDGET === 'all') return part === 'alert' || part === 'lb'
+  return (WIDGET === 'leaderboard' ? 'lb' : WIDGET) === part
+}
+
+// มุมวางวิดเจ็ตย่อย (leaderboard/goal/recent) — tl|tr|bl|br, default ล่างซ้าย
+const CORNER: Record<string, string> = {
+  tl: 'top:22px; left:22px;',
+  tr: 'top:22px; right:22px;',
+  bl: 'bottom:22px; left:22px;',
+  br: 'bottom:22px; right:22px;',
+}
+const corner = CORNER[params.get('pos') || ''] ?? CORNER.bl!
+
+const WIDGET_CARD = `background:rgba(11,17,32,.82); backdrop-filter:blur(8px);
+  border:1px solid rgba(148,163,184,.25); border-radius:14px; padding:12px 14px;
+  font-family:'Noto Sans Thai',sans-serif; color:#e8eef9; position:fixed;`
 
 // ---------- DOM ----------
 const root = document.getElementById('app')!
 root.innerHTML = `
+  ${show('alert') ? `
   <div id="alert" style="
     position:fixed; left:50%; transform:translate(-50%,-50%) scale(0) rotate(-2deg);
     width:560px; padding:26px 30px 22px; border-radius:22px; text-align:left;
@@ -60,20 +86,43 @@ root.innerHTML = `
       <span id="a-sound" style="font-size:12px; color:#94a3b8;">♪ เสียงประกอบ</span>
       <span style="font-size:12px; color:#f43f5e; font-weight:700;">● Donate Me ❤️ Engine</span>
     </div>
-  </div>
-  <!-- Leaderboard widget (มุมล่างซ้าย) -->
-  <div id="lb" style="display:none; position:fixed; left:22px; bottom:22px; width:230px;
-    background:rgba(11,17,32,.82); backdrop-filter:blur(8px); border:1px solid rgba(148,163,184,.25);
-    border-radius:14px; padding:12px 14px; font-family:'Noto Sans Thai',sans-serif; color:#e8eef9;">
+  </div>` : ''}
+  ${show('lb') ? `
+  <!-- Leaderboard widget -->
+  <div id="lb" style="${WIDGET_CARD} ${WIDGET === 'all' ? 'bottom:22px; left:22px;' : corner} width:230px; display:none;">
     <div style="font-size:12px; font-weight:800; color:#fbbf24; margin-bottom:8px;">🏆 TOP DONATORS</div>
     <ol id="lb-list" style="list-style:none; display:grid; gap:5px;"></ol>
-  </div>
+  </div>` : ''}
+  ${show('goal') ? `
+  <!-- Goal widget -->
+  <div id="goal" style="${WIDGET_CARD} ${corner} width:280px;">
+    <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:800; margin-bottom:8px;">
+      <span style="color:#34d399;">🎯 เป้าหมายเดือนนี้</span>
+      <span id="g-pct" style="color:#fff;">0%</span>
+    </div>
+    <div style="height:10px; border-radius:999px; background:rgba(148,163,184,.2); overflow:hidden;">
+      <div id="g-fill" style="height:100%; width:0%; border-radius:999px;
+        background:linear-gradient(90deg,#34d399,#10b981); transition:width .8s ease;"></div>
+    </div>
+    <div style="display:flex; justify-content:space-between; margin-top:7px; font-size:11.5px; color:#94a3b8;">
+      <span id="g-raised">฿0</span><span id="g-target">เป้า ฿0</span>
+    </div>
+  </div>` : ''}
+  ${show('recent') ? `
+  <!-- Recent donations widget -->
+  <div id="recent" style="${WIDGET_CARD} ${corner} width:270px;">
+    <div style="font-size:12px; font-weight:800; color:#fb7185; margin-bottom:8px;">⚡ กำลังใจล่าสุด</div>
+    <ol id="r-list" style="list-style:none; display:grid; gap:6px;"></ol>
+  </div>` : ''}
   <style>
     @keyframes bounce { from { transform:translateY(0); } to { transform:translateY(-8px); } }
     @keyframes shine { from { left:-80%; } to { left:160%; } }
     .lb-row { display:flex; align-items:center; gap:7px; font-size:12px; }
     .lb-row .lb-n { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#e2e8f0; }
     .lb-row .lb-t { color:#fbbf24; font-weight:700; }
+    .r-row { display:flex; align-items:center; gap:7px; font-size:12px; }
+    .r-row .r-n { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#e2e8f0; }
+    .r-row .r-t { color:#34d399; font-weight:700; }
     .confetti { position:fixed; top:-30px; pointer-events:none; animation:fall 3s linear forwards; z-index:-1; }
     @keyframes fall { to { transform:translateY(105vh) rotate(720deg); opacity:0; } }
   </style>
@@ -81,24 +130,41 @@ root.innerHTML = `
 
 document.body.style.cssText = 'margin:0;height:100%;background:rgba(0,0,0,0);overflow:hidden;font-family:Segoe UI,Noto Sans Thai,sans-serif'
 
-const alertBox = root.querySelector<HTMLElement>('#alert')!
-const elBadge = root.querySelector<HTMLElement>('#a-badge')!
-const elTts = root.querySelector<HTMLElement>('#a-tts')!
-const elAvatar = root.querySelector<HTMLElement>('#a-avatar')!
-const elImg = root.querySelector<HTMLImageElement>('#a-img')!
-const elName = root.querySelector<HTMLElement>('#a-name')!
-const elAmount = root.querySelector<HTMLElement>('#a-amount')!
-const elTier = root.querySelector<HTMLElement>('#a-tier')!
-const elMsg = root.querySelector<HTMLElement>('#a-msg')!
-const elSound = root.querySelector<HTMLElement>('#a-sound')!
-const elShine = root.querySelector<HTMLElement>('#a-shine')!
-const lbBox = root.querySelector<HTMLElement>('#lb')!
-const lbList = root.querySelector<HTMLElement>('#lb-list')!
+const alertBox = root.querySelector<HTMLElement>('#alert')
+const elBadge = root.querySelector<HTMLElement>('#a-badge')
+const elTts = root.querySelector<HTMLElement>('#a-tts')
+const elAvatar = root.querySelector<HTMLElement>('#a-avatar')
+const elImg = root.querySelector<HTMLImageElement>('#a-img')
+const elName = root.querySelector<HTMLElement>('#a-name')
+const elAmount = root.querySelector<HTMLElement>('#a-amount')
+const elTier = root.querySelector<HTMLElement>('#a-tier')
+const elMsg = root.querySelector<HTMLElement>('#a-msg')
+const elSound = root.querySelector<HTMLElement>('#a-sound')
+const elShine = root.querySelector<HTMLElement>('#a-shine')
+const lbBox = root.querySelector<HTMLElement>('#lb')
+const lbList = root.querySelector<HTMLElement>('#lb-list')
+const goalBox = root.querySelector<HTMLElement>('#goal')
+const gFill = root.querySelector<HTMLElement>('#g-fill')
+const gPct = root.querySelector<HTMLElement>('#g-pct')
+const gRaised = root.querySelector<HTMLElement>('#g-raised')
+const gTarget = root.querySelector<HTMLElement>('#g-target')
+const recentBox = root.querySelector<HTMLElement>('#recent')
+const recentList = root.querySelector<HTMLElement>('#r-list')
 
 function playShine() {
+  if (!elShine) return
   elShine.style.animation = 'none'
   void elShine.offsetWidth // restart animation
   elShine.style.animation = 'shine 1.1s ease-out .35s'
+}
+
+// fetch ที่แนบ token จาก URL (overlay ไม่อ่าน localStorage — ต่างจาก client ใน SPA)
+async function authFetch<T>(path: string): Promise<T> {
+  const res = await fetch(path, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json() as Promise<T>
 }
 
 // ---------- settings ----------
@@ -132,7 +198,7 @@ async function loadSettings() {
 
 const POSITIONS: Record<string, string> = { top: '20%', middle: '44%', bottom: '68%' }
 function applyPosition() {
-  alertBox.style.top = POSITIONS[settings.alert_position] ?? POSITIONS.middle
+  if (alertBox) alertBox.style.top = POSITIONS[settings.alert_position] ?? POSITIONS.middle
 }
 
 // ธีมสี accent ของ badge และพื้นหลังการ์ด ตาม settings.theme
@@ -144,8 +210,8 @@ function applyTheme() {
     dark: { c1: '#94a3b8', c2: '#64748b', bg: 'linear-gradient(160deg, rgba(17,26,45,.94), rgba(11,17,32,.96))' },
   }
   const t = themes[settings.theme] ?? themes.pink!
-  elBadge.style.background = `linear-gradient(90deg, ${t.c1}, ${t.c2})`
-  alertBox.style.background = t.bg
+  if (elBadge) elBadge.style.background = `linear-gradient(90deg, ${t.c1}, ${t.c2})`
+  if (alertBox) alertBox.style.background = t.bg
 }
 
 // ---------- tier ตามยอด (เกณฑ์มาจาก settings) ----------
@@ -164,6 +230,7 @@ function tierOf(amount: number): {
 let hideTimer: ReturnType<typeof setTimeout> | undefined
 
 function showAlert(d: DonationEvent) {
+  if (!alertBox || !elBadge || !elTts || !elAvatar || !elImg || !elName || !elAmount || !elTier || !elMsg || !elSound) return
   clearTimeout(hideTimer)
   const tier = tierOf(d.amount)
   // กัน XSS: ใช้ textContent เท่านั้น ห้าม innerHTML กับข้อมูลจากผู้ใช้
@@ -218,7 +285,7 @@ function showAlert(d: DonationEvent) {
 
 // ---------- Leaderboard widget ----------
 async function loadLeaderboard() {
-  if (!token) return
+  if (!lbBox || !lbList) return
   try {
     const top: TopDonator[] = await api.leaderboard()
     if (!settings.show_leaderboard || top.length === 0) {
@@ -242,13 +309,72 @@ async function loadLeaderboard() {
   }
 }
 
-// ---------- SSE + auto-reconnect ----------
+// ---------- Goal widget (Phase 8) ----------
+async function loadGoal() {
+  if (!goalBox || !gFill || !gPct || !gRaised || !gTarget) return
+  try {
+    const s = await authFetch<{ goal_amount: number; total_month: number }>('/api/me/stats')
+    if (s.goal_amount <= 0) {
+      goalBox.style.display = 'none'
+      return
+    }
+    const pct = Math.min(100, Math.round((s.total_month / s.goal_amount) * 100))
+    gFill.style.width = pct + '%'
+    gPct.textContent = pct + '%'
+    gRaised.textContent = `฿${s.total_month.toLocaleString()}`
+    gTarget.textContent = `เป้า ฿${s.goal_amount.toLocaleString()}`
+    goalBox.style.display = 'block'
+  } catch {
+    goalBox.style.display = 'none'
+  }
+}
+
+// ---------- Recent donations widget (Phase 8) ----------
+async function loadRecent() {
+  if (!recentBox || !recentList) return
+  try {
+    const res = await authFetch<{ items: { donor_name: string; amount: number; paid_at: number | null }[] }>(
+      '/api/me/donations?per_page=5',
+    )
+    const items = res.items
+    if (items.length === 0) {
+      recentBox.style.display = 'none'
+      return
+    }
+    recentList.innerHTML = items
+      .map(
+        (it) =>
+          `<li class="r-row"><span>💗</span><span class="r-n"></span><span class="r-t">฿${it.amount.toLocaleString()}</span></li>`,
+      )
+      .join('')
+    const names = recentList.querySelectorAll<HTMLElement>('.r-n')
+    items.forEach((it, i) => {
+      if (names[i]) names[i]!.textContent = it.donor_name
+    })
+    recentBox.style.display = 'block'
+  } catch {
+    recentBox.style.display = 'none'
+  }
+}
+
+// ---------- SSE + ping + auto-reconnect ----------
+function pingLoop() {
+  // แจ้ง server ว่าวิดเจ็ตยังเปิดอยู่ (TTL 30 วิ — ping ทุก 10 วิ)
+  const p = token ? `token=${encodeURIComponent(token)}&` : ''
+  void fetch(`/api/me/widget-ping?${p}w=${WIDGET}`, { method: 'POST' }).catch(() => {})
+}
+setInterval(pingLoop, 10_000)
+
 function connect() {
   const url = token ? `/events?token=${encodeURIComponent(token)}` : '/events'
-  const es = new EventSource(url)
+  const es = new EventSource(`${url}&w=${WIDGET}`.replace(/&$/, ''))
   es.addEventListener('donation', (e) => {
-    showAlert(JSON.parse((e as MessageEvent).data) as DonationEvent)
-    void loadLeaderboard() // อัปเดตกระดานหลังมีโดเนตใหม่
+    const d = JSON.parse((e as MessageEvent).data) as DonationEvent
+    if (show('alert')) showAlert(d)
+    // ทุกวิดเจ็ตย่อยรีเฟรชข้อมูลตามโดเนตใหม่
+    void loadLeaderboard()
+    void loadGoal()
+    void loadRecent()
   })
   es.onerror = () => {
     es.close()
@@ -260,7 +386,8 @@ void (async () => {
   await loadSettings()
   applyTheme()
   applyPosition()
-  await loadLeaderboard()
+  await Promise.all([loadLeaderboard(), loadGoal(), loadRecent()])
+  pingLoop()
   connect()
 })()
 

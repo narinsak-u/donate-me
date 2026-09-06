@@ -20,7 +20,12 @@ use axum::{
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sqlx::{sqlite::SqlitePoolOptions, Row, SqlitePool};
-use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    net::SocketAddr,
+    sync::{Arc, RwLock},
+    time::Duration,
+};
 use tokio::sync::broadcast;
 use tokio_stream::StreamExt as _;
 use tower_http::{cors::CorsLayer, services::ServeDir, trace::TraceLayer};
@@ -43,6 +48,30 @@ pub struct AppState {
     pub payment: Arc<payment::PaymentProvider>,
     // Security: อนุญาตให้ /events แบบไม่มี token ฟัง default streamer (โหมดใช้คนเดียว)
     pub allow_public_overlay: bool,
+    // Phase 8: สถานะวิดเจ็ต — key = "{user_id}:{widget}" → last_seen millis
+    // ใช้ ping+TTL (30 วิ) แทนการนับ connection: OBS ถูกปิด/แครช = offline ภายใน 30 วิ เสมอ
+    pub overlay_conns: Arc<RwLock<HashMap<String, i64>>>,
+}
+
+const WIDGET_TTL_MS: i64 = 30_000;
+
+/// รายชื่อวิดเจ็ตของ user ที่ ping มาใน 30 วิล่าสุด
+pub fn live_widgets(conns: &RwLock<HashMap<String, i64>>, user_id: &str, now: i64) -> Vec<String> {
+    conns
+        .read()
+        .map(|m| {
+            let mut ws: Vec<String> = m
+                .iter()
+                .filter(|(k, t)| {
+                    **t > now - WIDGET_TTL_MS && k.starts_with(&format!("{user_id}:"))
+                })
+                .filter_map(|(k, _)| k.rsplit(':').next().map(str::to_string))
+                .collect();
+            ws.sort();
+            ws.dedup();
+            ws
+        })
+        .unwrap_or_default()
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -400,9 +429,17 @@ fn row_into_donation(row: &sqlx::sqlite::SqliteRow) -> DonationRow {
     }
 }
 
+#[derive(serde::Deserialize, Default)]
+struct EventsQuery {
+    /// ชนิดวิดเจ็ตของผู้เชื่อมต่อ (all/alert/goal/recent/top/leaderboard) — ใช้นับสถานะออนไลน์
+    #[serde(default)]
+    w: Option<String>,
+}
+
 async fn events(
     State(state): State<AppState>,
     maybe: auth::MaybeAuthUser,
+    axum::extract::Query(q): axum::extract::Query<EventsQuery>,
 ) -> Result<Sse<impl tokio_stream::Stream<Item = Result<Event, tokio_stream::wrappers::errors::BroadcastStreamRecvError>>>, (StatusCode, &'static str)>
 {
     // Security: แบบไม่มี token จะได้ยินโดเนตของ default streamer เฉพาะเมื่อเปิดใช้
@@ -417,6 +454,16 @@ async fn events(
             ))
         }
     };
+    // จดจำว่าวิดเจ็ตนี้ออนไลน์ (มี ping ตามมาทุก 10 วิ — TTL 30 วิ)
+    let widget = q.w.unwrap_or_else(|| "all".into());
+    if !widget.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') || widget.len() > 20 {
+        return Err((StatusCode::BAD_REQUEST, "w ไม่ถูกต้อง"));
+    }
+    let key = format!("{my_id}:{widget}");
+    if let Ok(mut m) = state.overlay_conns.write() {
+        m.insert(key, now_millis());
+    }
+
     let rx = state.tx.subscribe();
     let stream = tokio_stream::wrappers::BroadcastStream::new(rx)
         .filter_map(move |msg| {
@@ -430,6 +477,40 @@ async fn events(
                 .map(|d| Ok(Event::default().event("donation").data(serde_json::to_string(&*d).unwrap())))
         });
     Ok(Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15))))
+}
+
+#[derive(serde::Serialize)]
+struct WidgetStatus {
+    online: bool,
+    /// วิดเจ็ตที่ ping มาใน 30 วิ (เช่น ["all"] หรือ ["alert","goal"])
+    widgets: Vec<String>,
+}
+
+/// POST /api/me/widget-ping?w=alert — overlay ส่งทุก 10 วิ เพื่อบอกว่ายังเปิดอยู่
+async fn widget_ping(
+    State(state): State<AppState>,
+    maybe: auth::MaybeAuthUser,
+    axum::extract::Query(q): axum::extract::Query<EventsQuery>,
+) -> Result<Json<HashMap<&'static str, bool>>, (StatusCode, &'static str)> {
+    let my_id = match maybe.user_id {
+        Some(id) => id,
+        None if state.allow_public_overlay => state.user_id.clone(),
+        None => return Err((StatusCode::UNAUTHORIZED, "ต้องมี token")),
+    };
+    let widget = q.w.unwrap_or_else(|| "all".into());
+    if !widget.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') || widget.len() > 20 {
+        return Err((StatusCode::BAD_REQUEST, "w ไม่ถูกต้อง"));
+    }
+    if let Ok(mut m) = state.overlay_conns.write() {
+        m.insert(format!("{my_id}:{widget}"), now_millis());
+    }
+    Ok(Json(HashMap::from([("ok", true)])))
+}
+
+/// GET /api/me/widget-status — วิดเจ็ต OBS ของฉันเชื่อมอยู่ไหม (Phase 8)
+async fn widget_status(State(state): State<AppState>, user: auth::AuthUser) -> Json<WidgetStatus> {
+    let widgets = live_widgets(&state.overlay_conns, &user.user_id, now_millis());
+    Json(WidgetStatus { online: !widgets.is_empty(), widgets })
 }
 
 #[derive(serde::Deserialize, Default)]
@@ -538,6 +619,7 @@ async fn main() {
         allow_public_overlay: std::env::var("ALLOW_PUBLIC_OVERLAY")
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(false),
+        overlay_conns: Arc::new(RwLock::new(HashMap::new())),
     };
     let is_mock = state.payment.is_mock();
 
@@ -602,6 +684,8 @@ async fn main() {
         .route("/api/me/promptpay-qr", get(slips::promptpay_qr))
         .nest_service("/uploads", ServeDir::new("uploads"))
         .route("/events", get(events))
+        .route("/api/me/widget-ping", post(widget_ping))
+        .route("/api/me/widget-status", get(widget_status))
         .merge(if is_mock { mock_pay::router() } else { Router::new() })
         .fallback_service(ServeDir::new(web_dist))
         .layer(CorsLayer::permissive())

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { api, clearSession, getToken, getUser, type PublicUser, type Settings } from '../api/auth'
+import { api, clearSession, getToken, getUser, request, type PublicUser, type Settings } from '../api/auth'
 import { dashApi, type DonationItem, type SlipItem, type Stats } from '../api/dashboard'
 import { applyTheme } from '../theme'
 import DonationChart from '../components/DonationChart.vue'
@@ -80,6 +80,36 @@ async function confirmReject() {
 const testQrAmount = ref(20)
 const ppValid = computed(() => /^(0\d{9}|\d{13})$/.test(settings.value?.promptpay_id.replace(/[-\s]/g, '') ?? ''))
 
+// ---------- Phase 8: สถานะวิดเจ็ต OBS ----------
+const widgetStatus = ref<{ online: boolean; widgets: string[] } | null>(null)
+
+async function loadWidgetStatus() {
+  try {
+    widgetStatus.value = await request<{ online: boolean; widgets: string[] }>('/api/me/widget-status')
+  } catch {
+    /* โหลดไม่ได้ = ยังเช็คไม่ได้ */
+  }
+}
+
+const WIDGET_KINDS = [
+  { w: 'all', label: 'ครบทุกวิดเจ็ต', desc: 'Alert + กระดาน (แบบเดิม)' },
+  { w: 'alert', label: 'ป็อบอัพ Alert', desc: 'เฉพาะป็อบอัพ + เสียง' },
+  { w: 'leaderboard', label: 'กระดาน Top', desc: 'วางมุมจอได้ด้วย ?pos=tl/tr/bl/br' },
+  { w: 'goal', label: 'หลอดเป้าหมาย', desc: 'อัปเดตสดตามโดเนต' },
+  { w: 'recent', label: 'กำลังใจล่าสุด', desc: '5 รายการหลังสุด' },
+] as const
+
+function widgetUrl(w: string): string {
+  return `${location.origin}/overlay.html?token=${encodeURIComponent(getToken() ?? '')}&w=${w}`
+}
+
+const copiedW = ref('')
+async function copyWidgetUrl(w: string) {
+  await navigator.clipboard.writeText(widgetUrl(w))
+  copiedW.value = w
+  setTimeout(() => (copiedW.value = ''), 2000)
+}
+
 onMounted(async () => {
   applyTheme()
   // เปิดแท็บตาม ?tab= (เช่น ลิงก์ "คู่มือสตรีมเมอร์" → ?tab=settings)
@@ -117,9 +147,11 @@ onMounted(async () => {
     /* ประวัติโหลดไม่ได้ไม่ถือว่าทั้งหน้าพัง */
   }
   void loadSlips()
+  void loadWidgetStatus()
   // คิวสลิป: ดึงใหม่ทุก 20 วิ เมื่ออยู่แท็บคิว (มีคนแนบสลิปเข้ามาเอง)
   setInterval(() => {
     if (tab.value === 'slips') void loadSlips()
+    void loadWidgetStatus()
   }, 20_000)
 })
 
@@ -301,6 +333,13 @@ const themeOptions = [
     <div class="main">
       <header class="topbar">
         <span class="live-pill">● LIVE ON AIR</span>
+        <span
+          class="widget-pill"
+          :class="widgetStatus?.online ? 'on' : 'off'"
+          :title="widgetStatus?.widgets.join(', ') || 'ยังไม่มีการเชื่อมต่อ'"
+        >
+          {{ widgetStatus?.online ? '🟢 OBS ออนไลน์' : '🔴 วิดเจ็ตออฟไลน์' }}
+        </span>
         <span class="today-pill">ยอดสะสมวันนี้ <b>฿{{ (stats?.total_today ?? 0).toLocaleString() }}.00</b></span>
         <div class="topbar-right">
           <button class="btn-primary test-btn" @click="testAlert()">▶ ทดสอบ Alert</button>
@@ -591,6 +630,28 @@ const themeOptions = [
               <div class="step"><b>Step 3</b><span>กดทดสอบ Alert แล้วดูผลในฉากจริง</span></div>
             </div>
             <p class="muted small" style="margin-top: 10px">🔒 อย่าแชร์ URL นี้กับคนอื่น — token ผูกกับบัญชีของคุณ (หมดอายุ 7 วัน ล็อกอินใหม่เพื่อรีเฟรช)</p>
+          </section>
+
+          <section class="card">
+            <div class="card-head">
+              <h2>🧩 วิดเจ็ตแยกชิ้น (ใส่ OBS ทีละช่อง)</h2>
+              <span class="badge" :class="widgetStatus?.online ? 'badge-green' : 'badge-pink'">
+                {{ widgetStatus?.online ? `ออนไลน์: ${widgetStatus.widgets.join(', ')}` : 'ยังไม่เชื่อมต่อ' }}
+              </span>
+            </div>
+            <p class="muted small" style="margin-bottom: 12px">
+              เพิ่มหลาย Browser Source ได้ — แต่ละ URL แสดงเฉพาะวิดเจ็ตของตัวเอง วางมุมจอด้วย <code>&amp;pos=tl|tr|bl|br</code> (สถานะเขียว = OBS เปิด URL นั้นอยู่ ตรวจทุก 30 วิ)
+            </p>
+            <table class="widget-table">
+              <thead><tr><th>วิดเจ็ต</th><th>URL สำหรับ OBS</th><th></th></tr></thead>
+              <tbody>
+                <tr v-for="k in WIDGET_KINDS" :key="k.w">
+                  <td><b>{{ k.label }}</b><br /><span class="muted small">{{ k.desc }}</span></td>
+                  <td><code class="widget-url">{{ widgetUrl(k.w) }}</code></td>
+                  <td><button class="mini" @click="copyWidgetUrl(k.w)">{{ copiedW === k.w ? '✓ คัดลอกแล้ว' : '⧉ คัดลอก' }}</button></td>
+                </tr>
+              </tbody>
+            </table>
           </section>
 
           <section class="card">
@@ -1043,6 +1104,16 @@ code { background: var(--bg-card-2); padding: 1px 6px; border-radius: 5px; font-
 .toolbar .date { width: auto; padding: 10px 12px; }
 
 /* ===== Phase 7: คิวสลิป + บัญชีรับเงิน ===== */
+.widget-pill {
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 6px 13px;
+  border-radius: 999px;
+}
+.widget-pill.on { background: rgba(16, 185, 129, 0.12); color: var(--emerald); }
+.widget-pill.off { background: rgba(244, 63, 94, 0.12); color: var(--primary); }
+.widget-table td { padding: 9px 10px; }
+.widget-url { font-size: 11px; color: var(--text-dim); word-break: break-all; }
 .slip-badge {
   margin-left: auto;
   background: var(--primary);
